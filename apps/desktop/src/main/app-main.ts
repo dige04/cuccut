@@ -102,7 +102,7 @@ export function startDesktopApp(): void {
         if (level === 'warning' || level === 'error') console.error(`[renderer:${level}] ${message} (${sourceId}:${lineNumber})`);
       });
       // i18n-ignore: diagnostic log printed to the terminal in development
-      win.webContents.on('render-process-gone', (_event, details) => console.error('[renderer] 进程退出', details));
+      win.webContents.on('render-process-gone', (_event, details) => console.error('[renderer] process exited', details));
     }
 
     // The window runs only its own pages; external links are handed to the system browser.
@@ -271,7 +271,7 @@ export function startDesktopApp(): void {
     installAppMenu();
     // Start the Runtime first, so it runs in parallel while the window loads.
     // i18n-ignore: diagnostic log, printed only to the main process's terminal
-    void connection().catch((error) => console.error('[cuccut] Runtime 启动失败', error));
+    void connection().catch((error) => console.error('[cuccut] Runtime failed to start', error));
     // App auto-update (architecture design §2.6): checking, downloading and verification all happen in Main; the Runtime does not take part.
     updates = installAppUpdates();
     // macOS's Dock icon does not pick up BrowserWindow's icon, so it is set separately in development.

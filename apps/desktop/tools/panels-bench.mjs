@@ -60,18 +60,18 @@ function parseOptions(argv) {
     const arg = argv[i];
     if (arg === '--tier') {
       const tier = argv[++i];
-      if (!TIERS[tier]) throw new Error(`--tier 只能是 ${Object.keys(TIERS).join(' 或 ')}`);
+      if (!TIERS[tier]) throw new Error(`--tier must be ${Object.keys(TIERS).join(' or ')}`);
       if (!options.tiers.includes(tier)) options.tiers.push(tier);
     } else if (arg === '--runs') options.runs = Number(argv[++i]);
     else if (arg === '--window') {
       const [width, height] = argv[++i].split('x').map(Number);
       options.window = { width, height };
     } else if (arg === '--json') options.json = resolve(argv[++i]);
-    else throw new Error(`不认识的参数 ${arg}`);
+    else throw new Error(`Unknown argument ${arg}`);
   }
   if (options.tiers.length === 0) options.tiers = ['small', 'big'];
   else options.tiers.sort((a, b) => Object.keys(TIERS).indexOf(a) - Object.keys(TIERS).indexOf(b));
-  if (!(options.runs >= 1)) throw new Error('--runs 至少是 1');
+  if (!(options.runs >= 1)) throw new Error('--runs must be at least 1');
   return options;
 }
 
@@ -128,17 +128,17 @@ main().catch((error) => {
 
 async function main() {
   if (!existsSync(join(RENDERER, 'index.html'))) {
-    console.error(`没有 ${join(RENDERER, 'index.html')}：先运行 npm run build`);
+    console.error(`Missing ${join(RENDERER, 'index.html')}: run npm run build first`);
     exit(2);
   }
   const engineHost = process.env.CUCCUT_ENGINE_HOST || join(process.env.CARGO_TARGET_DIR || join(ROOT, 'target'), 'debug/engine-host');
   if (!existsSync(engineHost)) {
-    console.error(`没有 ${engineHost}：先 cargo build -p engine-host，或用 CUCCUT_ENGINE_HOST 指定`);
+    console.error(`Missing ${engineHost}: run cargo build -p engine-host first, or set CUCCUT_ENGINE_HOST`);
     exit(2);
   }
   const chromeBinary = findChrome();
   if (!chromeBinary) {
-    console.error('找不到 Chrome：装 Google Chrome，或用 CUCCUT_CHROME 指定可执行文件');
+    console.error('Chrome not found: install Google Chrome, or set the executable with CUCCUT_CHROME');
     exit(2);
   }
   const ffmpeg = process.env.CUCCUT_FFMPEG || 'ffmpeg';
@@ -160,7 +160,7 @@ async function main() {
     const tier = TIERS[key];
     const need = transcriptSeconds(tier.cues);
     const seconds = tier.mediaSeconds;
-    if (seconds < need) throw new Error(`${tier.label}素材 ${seconds} 秒，短于转写的 ${need.toFixed(1)} 秒`);
+    if (seconds < need) throw new Error(`${tier.label} media is ${seconds} s, shorter than the ${need.toFixed(1)} s transcript`);
     const file = join(dirs.media, `panels-${key}.mp4`);
     const started = Date.now();
     const made = spawnSync(ffmpeg, [
@@ -168,14 +168,14 @@ async function main() {
       ...['-f', 'lavfi', '-i', `anullsrc=r=48000:cl=stereo:d=${seconds}`],
       ...['-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', file],
     ]);
-    if (made.error || made.status !== 0) throw new Error(`ffmpeg 生成${tier.label}素材失败：${made.error?.message ?? made.stderr}`);
+    if (made.error || made.status !== 0) throw new Error(`ffmpeg failed to generate ${tier.label} media: ${made.error?.message ?? made.stderr}`);
     const probed = spawnSync(ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file], { encoding: 'utf8' });
     const duration = Number(probed.stdout.trim());
     if (probed.status !== 0 || !(duration >= need)) {
-      throw new Error(`${tier.label}素材时长 ${probed.stdout.trim() || probed.stderr} 秒，不够转写的 ${need.toFixed(1)} 秒`);
+      throw new Error(`${tier.label} media is ${probed.stdout.trim() || probed.stderr} s long, not enough for the ${need.toFixed(1)} s transcript`);
     }
     console.error(
-      `${tier.label}素材 ${duration.toFixed(1)} 秒（转写 ${need.toFixed(1)} 秒），生成用了 ${((Date.now() - started) / 1000).toFixed(1)} 秒`,
+      `${tier.label} media ${duration.toFixed(1)} s (transcript ${need.toFixed(1)} s), generated in ${((Date.now() - started) / 1000).toFixed(1)} s`,
     );
     tiers.push({ key, ...tier, media: file, mediaSeconds: duration });
   }
@@ -237,10 +237,10 @@ async function main() {
     });
   });
   if (!ready) {
-    console.error('隔离的 Runtime 没有起来');
+    console.error('The isolated Runtime did not start');
     exit(2);
   }
-  console.error(`Runtime 就绪，造夹具用了 ${((Date.now() - started) / 1000).toFixed(1)} 秒`);
+  console.error(`Runtime ready, fixture build took ${((Date.now() - started) / 1000).toFixed(1)} s`);
   for (const t of tiers) t.scale = ready.tiers.find((s) => s.tier === t.key);
   const discovery = JSON.parse(readFileSync(join(dirs.home, 'runtime.json'), 'utf8'));
 
@@ -263,14 +263,14 @@ async function main() {
   const portFile = join(dirs.chrome, 'DevToolsActivePort');
   for (let i = 0; i < 300 && !(existsSync(portFile) && readFileSync(portFile, 'utf8').includes('\n')); i++) await sleep(100);
   if (!existsSync(portFile)) {
-    console.error('Chrome 没有起来（没有 DevToolsActivePort）');
+    console.error('Chrome did not start (no DevToolsActivePort)');
     exit(2);
   }
   const debugPort = readFileSync(portFile, 'utf8').split('\n')[0];
   const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
   const target = targets.find((t) => t.type === 'page');
   if (!target) {
-    console.error('Chrome 里没有页面');
+    console.error('No page in Chrome');
     exit(2);
   }
   const page = await connect(target.webSocketDebuggerUrl);
@@ -300,14 +300,14 @@ async function main() {
     tier.runs = [];
     for (let n = 1; n <= options.runs; n++) {
       const loadBefore = await waitForLoad();
-      console.error(`== ${tier.label} 第 ${n}/${options.runs} 次新载入，1 分钟负载 ${loadBefore.toFixed(2)}`);
+      console.error(`== ${tier.label} fresh load ${n}/${options.runs}, 1-minute load ${loadBefore.toFixed(2)}`);
       await page.send('Page.navigate', { url: `${origin}/` });
       const runStarted = Date.now();
       let timer;
       try {
         const suite = runSuite(page, {
           video: tier.label,
-          log: (step) => console.error(`  ${step} 完（${((Date.now() - runStarted) / 1000).toFixed(0)} 秒）`),
+          log: (step) => console.error(`  ${step} done (${((Date.now() - runStarted) / 1000).toFixed(0)} s)`),
         });
         // After a timeout this set is still attached to the page: the next navigation would make it error, so it must not be treated as an unhandled rejection.
         suite.catch(() => {});
@@ -315,7 +315,7 @@ async function main() {
           suite,
           new Promise((_, fail) => {
             timer = setTimeout(
-              () => fail(Object.assign(new Error(`${RUN_TIMEOUT_MS / 60_000} 分钟没有跑完`), { timeout: true })),
+              () => fail(Object.assign(new Error(`${RUN_TIMEOUT_MS / 60_000} minutes without finishing`), { timeout: true })),
               RUN_TIMEOUT_MS,
             );
           }),
@@ -326,7 +326,7 @@ async function main() {
         else failed++;
         const message = error instanceof Error ? error.message : String(error);
         tier.runs.push({ run: n, loadBefore, loadAfter: loadavg()[0], error: message });
-        console.error(`${tier.label} 第 ${n} 次：${message}`);
+        console.error(`${tier.label} run ${n}: ${message}`);
       } finally {
         clearTimeout(timer);
       }
@@ -340,7 +340,7 @@ async function main() {
   console.log('');
   console.log(table(tiers));
   console.log(
-    `\n拦下 Typekit 的请求 ${typekit} 个；其他非本机的请求 ${external.size} 个${external.size > 0 ? `：${[...external].slice(0, 5).join('、')}` : ''}`,
+    `\nBlocked ${typekit} Typekit requests; ${external.size} other non-local requests${external.size > 0 ? `: ${[...external].slice(0, 5).join(', ')}` : ''}`,
   );
   // The media paths are in the temp directory and are deleted on exit, so they are not written into the results.
   if (options.json)
@@ -373,7 +373,7 @@ async function connect(url) {
   const ws = new WebSocket(url);
   await new Promise((done, fail) => {
     ws.addEventListener('open', done, { once: true });
-    ws.addEventListener('error', () => fail(new Error(`连不上 ${url}`)), { once: true });
+    ws.addEventListener('error', () => fail(new Error(`Cannot connect to ${url}`)), { once: true });
   });
   let id = 0;
   const pending = new Map();
@@ -383,12 +383,12 @@ async function connect(url) {
     if (message.id && pending.has(message.id)) {
       const { done, fail } = pending.get(message.id);
       pending.delete(message.id);
-      if (message.error) fail(new Error(`${message.error.message}${message.error.data ? `：${message.error.data}` : ''}`));
+      if (message.error) fail(new Error(`${message.error.message}${message.error.data ? `: ${message.error.data}` : ''}`));
       else done(message.result);
     } else if (message.method) handlers.get(message.method)?.(message.params);
   });
   ws.addEventListener('close', () => {
-    for (const { fail } of pending.values()) fail(new Error('与 Chrome 的连接断了'));
+    for (const { fail } of pending.values()) fail(new Error('Connection to Chrome lost'));
     pending.clear();
   });
   const send = (method, params = {}) =>
@@ -400,7 +400,7 @@ async function connect(url) {
   const ev = async (body) => {
     const r = await send('Runtime.evaluate', { expression: `(async () => { ${body} })()`, awaitPromise: true, returnByValue: true });
     if (r.exceptionDetails)
-      throw new Error(`页面里出错：${r.exceptionDetails.exception?.description ?? r.exceptionDetails.text}`.slice(0, 1500));
+      throw new Error(`Error in page: ${r.exceptionDetails.exception?.description ?? r.exceptionDetails.text}`.slice(0, 1500));
     return r.result?.value;
   };
   return { send, ev, sleep, on: (method, fn) => handlers.set(method, fn), close: () => ws.close() };
@@ -423,13 +423,13 @@ function environment(chrome, window) {
 
 function printEnvironment(env, tiers = null, print = console.error) {
   const loads = tiers
-    ? tiers.map((t) => `${t.label} ${t.runs.map((r) => `${r.loadBefore.toFixed(1)}→${r.loadAfter.toFixed(1)}`).join('、')}`).join('；')
+    ? tiers.map((t) => `${t.label} ${t.runs.map((r) => `${r.loadBefore.toFixed(1)}→${r.loadAfter.toFixed(1)}`).join(', ')}`).join('; ')
     : null;
   const inner = tiers?.flatMap((t) => t.runs).find((r) => r.window)?.window;
   print(
-    `环境：${env.cpu}（${env.cores} 核）、${env.memoryGB} GB、${env.os}；commit ${env.commit}${env.dirty ? '（有未提交的改动）' : ''}；` +
-      `${env.chrome}（无头），窗口 ${env.window.width}×${env.window.height}${inner ? `，页面 ${inner.innerW}×${inner.innerH}` : ''}，屏蔽 Typekit` +
-      (loads ? `；1 分钟负载（开测→测完）：${loads}` : ''),
+    `Environment: ${env.cpu} (${env.cores} cores), ${env.memoryGB} GB, ${env.os}; commit ${env.commit}${env.dirty ? ' (uncommitted changes)' : ''}; ` +
+      `${env.chrome} (headless), window ${env.window.width}×${env.window.height}${inner ? `, page ${inner.innerW}×${inner.innerH}` : ''}, Typekit blocked` +
+      (loads ? `; 1-minute load (before→after run): ${loads}` : ''),
   );
 }
 
@@ -444,10 +444,10 @@ function scaleLine(tier) {
   const paragraphs = spread(ok.map((r) => r.lists.transcript.mounted.setsize));
   const bands = spread(ok.map((r) => r.timeline.fit[0]?.bands));
   const items = Object.values(s.items).reduce((a, b) => a + b, 0);
-  const parts = [`${s.items.video ?? 0} 个视频片段`, `${s.items.audio ?? 0} 个配音块`, `${s.items.caption ?? 0} 条字幕`];
+  const parts = [`${s.items.video ?? 0} video clips`, `${s.items.audio ?? 0} dub blocks`, `${s.items.caption ?? 0} captions`];
   return (
-    `${tier.label}：${s.cues} 句字幕、${s.words} 词转写（${paragraphs || '?'} 段）、${s.translations} 句译文，` +
-    `时间线 ${items} 件（${parts.join('、')}）与 ${bands || s.cuts} 条剪口带（剪口 ${s.cuts} 个），片长 ${clock(s.seconds)}（转写 ${clock(s.transcriptSeconds)}）`
+    `${tier.label}: ${s.cues} caption cues, ${s.words} transcript words (${paragraphs || '?'} paragraphs), ${s.translations} translated cues, ` +
+    `timeline ${items} items (${parts.join(', ')}) and ${bands || s.cuts} cut bands (${s.cuts} cuts), length ${clock(s.seconds)} (transcript ${clock(s.transcriptSeconds)})`
   );
 }
 
@@ -464,9 +464,9 @@ function spread(values, unit = '') {
 function longest(values) {
   if (values.length === 0) return '—';
   const hit = values.filter((v) => v > 0);
-  if (hit.length === 0) return '没有 ≥ 50 ms 的任务';
+  if (hit.length === 0) return 'no task ≥ 50 ms';
   if (hit.length === values.length) return spread(hit, ' ms');
-  return `${values.length} 次里 ${hit.length} 次 ${spread(hit, ' ms')}`;
+  return `${hit.length} of ${values.length} runs ${spread(hit, ' ms')}`;
 }
 
 /** Rows correspond one-to-one with the M12 baseline table in acceptance spec §4. Each cell is the range across this tier's fresh loads; when the large and small tiers match, write “same as left”. */
@@ -477,7 +477,7 @@ function table(tiers) {
   const isEnter = (name) => name.endsWith('-to-translation');
   const rows = [
     [
-      `字幕列表挂载（滚到中段，视口高 ${viewport((r) => r.lists.captions.mounted.viewportH)}）：行 / 元素`,
+      `Caption list mounted (scrolled to middle, viewport height ${viewport((r) => r.lists.captions.mounted.viewportH)}): rows / elements`,
       (runs) =>
         mounts(
           runs.map((r) => r.lists.captions.mounted),
@@ -485,7 +485,7 @@ function table(tiers) {
         ),
     ],
     [
-      `译文列表挂载（视口高 ${viewport((r) => r.lists.translation.mounted.viewportH)}）：行 / 元素`,
+      `Translation list mounted (viewport height ${viewport((r) => r.lists.translation.mounted.viewportH)}): rows / elements`,
       (runs) =>
         mounts(
           runs.map((r) => r.lists.translation.mounted),
@@ -493,7 +493,7 @@ function table(tiers) {
         ),
     ],
     [
-      `文稿挂载（视口高 ${viewport((r) => r.lists.transcript.mounted.viewportH)}）：段 / 元素`,
+      `Transcript mounted (viewport height ${viewport((r) => r.lists.transcript.mounted.viewportH)}): paragraphs / elements`,
       (runs) =>
         mounts(
           runs.map((r) => r.lists.transcript.mounted),
@@ -501,7 +501,7 @@ function table(tiers) {
         ),
     ],
     [
-      `时间线 100% 挂载（视口宽 ${viewport((r) => r.timeline['scroll 100%'].mounted.viewportW)}）：件 / 剪口带 / 元素`,
+      `Timeline 100% mounted (viewport width ${viewport((r) => r.timeline['scroll 100%'].mounted.viewportW)}): clips / cut bands / elements`,
       (runs) =>
         mounts(
           runs.map((r) => r.timeline['scroll 100%'].mounted),
@@ -509,7 +509,7 @@ function table(tiers) {
         ),
     ],
     [
-      '时间线最大缩放挂载：件 / 剪口带 / 元素',
+      'Timeline max zoom mounted: clips / cut bands / elements',
       (runs) =>
         mounts(
           runs.map((r) => r.timeline['scroll max'].mounted),
@@ -517,7 +517,7 @@ function table(tiers) {
         ),
     ],
     [
-      '列表与时间线（100%、最大缩放）连续滚动的帧间隔 P95',
+      'Frame interval P95 during continuous scrolling of lists and timeline (100%, max zoom)',
       (runs) => {
         const series = runs.flatMap((r) => [...Object.values(r.lists), r.timeline['scroll 100%'], r.timeline['scroll max']]);
         const p95 = spread(
@@ -525,16 +525,16 @@ function table(tiers) {
           ' ms',
         );
         const over = series.reduce((a, s) => a + s.scroll.over50 + s.fast.over50, 0);
-        return `${p95}，${over === 0 ? '没有超过 50 ms 的帧' : `${series.length * 2} 段里共 ${over} 帧超过 50 ms`}`;
+        return `${p95}, ${over === 0 ? 'no frames over 50 ms' : `${over} frames over 50 ms across ${series.length * 2} segments`}`;
       },
     ],
     [
-      '时间线缩放一步（100% 与相邻一级之间）',
+      'Timeline one zoom step (between 100% and the adjacent level)',
       (runs) => longest(runs.flatMap((r) => [...r.timeline.zoomIn, ...r.timeline.zoomOut].map((x) => x.longest))),
     ],
-    ['整片入镜（件全部挂上）', (runs) => longest(runs.flatMap((r) => r.timeline.fit.map((x) => x.longest)))],
+    ['Whole sequence in view (all clips mounted)', (runs) => longest(runs.flatMap((r) => r.timeline.fit.map((x) => x.longest)))],
     [
-      '页签切换：文稿、字幕、元素之间',
+      'Tab switch: between transcript, captions and elements',
       (runs) =>
         longest(
           runs.flatMap((r) =>
@@ -545,7 +545,7 @@ function table(tiers) {
         ),
     ],
     [
-      '页签切换：进入译文（原文＋译文）',
+      'Tab switch: into translation (source + translation)',
       (runs) =>
         longest(
           runs.flatMap((r) =>
@@ -556,37 +556,37 @@ function table(tiers) {
         ),
     ],
     [
-      '字幕全部替换 / 撤销',
+      'Caption replace all / undo',
       (runs) => {
         const reps = runs.flatMap((r) => r.replace);
         const hits = spread(reps.map((x) => x.hits));
         const bad = reps.filter((x) => x.hitsAfterReplace !== 0 || x.hitsAfterUndo !== x.hits).length;
         return (
-          `${hits} 处命中：${longest(reps.map((x) => x.replaceAll.longest))} / ${longest(reps.map((x) => x.undo.longest))}` +
-          (bad > 0 ? `（${bad} 次核对不符：替换后仍有命中或撤销后没回到原数）` : '')
+          `${hits} hits: ${longest(reps.map((x) => x.replaceAll.longest))} / ${longest(reps.map((x) => x.undo.longest))}` +
+          (bad > 0 ? `(${bad} checks failed: hits remained after replace, or the count did not return to the original after undo)` : '')
         );
       },
     ],
   ];
-  const out = [`| 项目 | ${tiers.map((t) => t.label).join(' | ')} |`, `| --- | ${tiers.map(() => '---').join(' | ')} |`];
+  const out = [`| Item | ${tiers.map((t) => t.label).join(' | ')} |`, `| --- | ${tiers.map(() => '---').join(' | ')} |`];
   const runsByTier = tiers.map(runsOf);
   for (const [label, cell] of rows) {
     const cells = runsByTier.map((runs) => {
-      if (runs.length === 0) return '没跑完';
+      if (runs.length === 0) return 'not finished';
       try {
         return cell(runs);
       } catch {
         return '?';
       }
     });
-    for (let i = cells.length - 1; i > 0; i--) if (runsByTier[i].length > 0 && cells[i] === cells[i - 1]) cells[i] = '同左';
+    for (let i = cells.length - 1; i > 0; i--) if (runsByTier[i].length > 0 && cells[i] === cells[i - 1]) cells[i] = 'same as left';
     out.push(`| ${label} | ${cells.join(' | ')} |`);
   }
   out.push('');
   out.push(
-    '说明：挂载取各次新载入滚到中段（时间线 100% 与最大缩放各在 50% 处）的数；滚动含每帧 40 px 与 200 px 两种，各 240 帧；' +
-      '操作格是最长任务（longtask，只报 ≥ 50 ms 的任务）在各次里的范围，「N 次里 k 次」表示其余各次没有 ≥ 50 ms 的任务；' +
-      '「文稿、字幕、元素之间」含离开译文的三对，「进入译文」是从文稿、字幕、元素进入原文＋译文的三对，各两轮。',
+    'Notes: mount counts are taken from each fresh load scrolled to the middle (timeline 100% and max zoom each at 50%); scrolling covers 40 px and 200 px per frame, 240 frames each; ' +
+      'action cells give the range of the longest task (longtask, reported only if ≥ 50 ms) across runs; "k of N runs" means the other runs had no task ≥ 50 ms; ' +
+      '"between transcript, captions and elements" covers the three pairs that leave translation; "into translation" covers the three pairs from transcript, captions and elements into source + translation, two rounds each.',
   );
   return out.join('\n');
 }

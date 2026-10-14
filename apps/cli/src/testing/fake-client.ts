@@ -22,11 +22,11 @@ export class FakeClient {
     this.calls.push({ method, params });
     if (method === 'catalog.call') {
       const tool = this.tools[params.name as string];
-      if (!tool) throw new Error(`没有准备工具 ${String(params.name)}`);
+      if (!tool) throw new Error(`no prepared tool ${String(params.name)}`);
       return tool((params.args ?? {}) as Record<string, unknown>);
     }
     const handler = this.methods[method];
-    if (!handler) throw new Error(`没有准备方法 ${method}`);
+    if (!handler) throw new Error(`no prepared method ${method}`);
     return handler(params);
   }
 
@@ -59,7 +59,7 @@ export class FakeClient {
     this.#jobs?.event({ type: 'job.updated', job });
   }
 
-  disconnect(reason = '测试断开'): void {
+  disconnect(reason = 'test disconnect'): void {
     this.state = { status: 'disconnected', reason };
     for (const listener of this.#stateListeners) listener(this.state);
   }

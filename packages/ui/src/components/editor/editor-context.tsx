@@ -20,6 +20,6 @@ export const EditorContext = createContext<EditorActions | null>(null);
 
 export function useEditorActions(): EditorActions {
   const actions = useContext(EditorContext);
-  if (!actions) throw new Error('EditorContext 缺失'); // i18n-ignore: development-time assertion, not shown to users
+  if (!actions) throw new Error('EditorContext is missing'); // i18n-ignore: development-time assertion, not shown to users
   return actions;
 }

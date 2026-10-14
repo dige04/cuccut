@@ -170,7 +170,7 @@ export function installHelpers() {
       ?.click();
     await window.__sleep(1500);
     const row = [...document.querySelectorAll('[role="row"]')].find((r) => r.textContent.startsWith(name));
-    if (!row) throw new Error(`Space 里没有 ${name}`);
+    if (!row) throw new Error(`No ${name} in Space`);
     row.focus();
     await window.__sleep(300);
     window.__lt.length = 0;
@@ -183,12 +183,12 @@ export function installHelpers() {
   };
   window.__btn = (label) => {
     const b = [...document.querySelectorAll('button')].find((el) => el.getAttribute('aria-label') === label);
-    if (!b) throw new Error(`没有按钮 ${label}`);
+    if (!b) throw new Error(`No button ${label}`);
     return b;
   };
   window.__byText = (text) => {
     const b = [...document.querySelectorAll('[role=radio],button,label')].find((el) => el.textContent.trim() === text);
-    if (!b) throw new Error(`没有 ${text}`);
+    if (!b) throw new Error(`No ${text}`);
     return b;
   };
   window.__scroller = (el) => {
@@ -289,7 +289,7 @@ export async function runSuite(page, { video, px = 40, fast = 200, frames = 240,
   );
   result.open = await J(
     `const r = await window.__open(${JSON.stringify(video)}); for (let i = 0; i < 3000 && !window.__tl(); i++) await window.__sleep(100);
-     if (!window.__tl()) throw new Error('时间线没有出来'); return JSON.stringify({ total: r.total, sheets: document.styleSheets.length })`,
+     if (!window.__tl()) throw new Error('Timeline did not appear'); return JSON.stringify({ total: r.total, sheets: document.styleSheets.length })`,
   );
   await page.sleep(3000);
 
@@ -338,7 +338,7 @@ export async function runSuite(page, { video, px = 40, fast = 200, frames = 240,
       await page.sleep(300);
     }
   }
-  log('页签切换');
+  log('tab switch');
 
   // Lists: frame intervals while scrolling continuously (starting at 20%, px pixels per frame, with 60 warm-up frames first; then a fast fling at fast pixels per frame), then scroll to 50% and count the mounted items.
   result.lists = {};
@@ -357,7 +357,7 @@ export async function runSuite(page, { video, px = 40, fast = 200, frames = 240,
        return JSON.stringify({ scroll: window.__stats(d), fast: window.__stats(f), mounted: window.__mountedList() })`,
     );
   }
-  log('列表滚动');
+  log('list scroll');
   await go(mode('只看原文'));
 
   // Replacing and undoing all captions: find the markers, replace them with beacon, three rounds (each round undoes back to the original state).
@@ -378,7 +378,7 @@ export async function runSuite(page, { video, px = 40, fast = 200, frames = 240,
       ),
     );
   }
-  log('全部替换');
+  log('replace all');
 
   // Timeline: the mounted count when centered at 100%; one zoom step (100% → ⌘= → ⌘-) and fit-to-view, three times each; the number of steps needed to reach maximum zoom (pressing ⌘= repeatedly until the width stops changing);
   // continuous horizontal scrolling at maximum zoom and at 100% (then scroll to 50% and count the mounted items).
@@ -403,7 +403,7 @@ export async function runSuite(page, { video, px = 40, fast = 200, frames = 240,
     );
     await page.sleep(800);
   }
-  log('缩放与整片入镜');
+  log('zoom and fit whole clip');
   await z100();
   result.timeline.maxSteps = await J(
     `const sc = window.__tl().querySelector('.cc-scroll'); let n = 0;
@@ -424,6 +424,6 @@ export async function runSuite(page, { video, px = 40, fast = 200, frames = 240,
        return JSON.stringify({ scroll: window.__stats(d), fast: window.__stats(f), mounted: window.__mountedTl() })`,
     );
   }
-  log('时间线滚动');
+  log('timeline scroll');
   return result;
 }

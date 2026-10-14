@@ -91,7 +91,7 @@ export async function startFakeProviderServer(handler: FakeHandler): Promise<Fak
       if (check()) return resolve();
       const timer = setTimeout(() => {
         waiters.delete(waiter);
-        reject(new Error(`等待超时：${what}`));
+        reject(new Error(`Timed out waiting: ${what}`));
       }, timeoutMs);
       const waiter = () => {
         if (!check()) return;
@@ -106,8 +106,8 @@ export async function startFakeProviderServer(handler: FakeHandler): Promise<Fak
     requests: [],
     closedEarly: 0,
     handler,
-    waitForRequests: (count, timeoutMs = 10_000) => until(() => state.requests.length >= count, timeoutMs, `${count} 个请求`),
-    waitForClosedEarly: (count, timeoutMs = 10_000) => until(() => state.closedEarly >= count, timeoutMs, `${count} 个断开的请求`),
+    waitForRequests: (count, timeoutMs = 10_000) => until(() => state.requests.length >= count, timeoutMs, `${count} requests`),
+    waitForClosedEarly: (count, timeoutMs = 10_000) => until(() => state.closedEarly >= count, timeoutMs, `${count} early-closed requests`),
     close: () =>
       new Promise<void>((resolve) => {
         for (const socket of sockets) socket.destroy();

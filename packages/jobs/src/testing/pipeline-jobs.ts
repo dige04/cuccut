@@ -10,7 +10,7 @@ export function testJobManager(
 ): JobManager {
   const router: TranscribeRouter = {
     selectTranscribe: async () => {
-      throw new Error('固定流程的测试不转写');
+      throw new Error('Fixed-pipeline tests do not transcribe');
     },
     transcriber: () => null,
     executors: () => [],
@@ -28,7 +28,7 @@ export function testJobManager(
       retain: () => {},
       release: () => {},
       source: async () => {
-        throw new Error('固定流程的测试没有素材');
+        throw new Error('Fixed-pipeline tests have no media');
       },
       current: () => null,
       videoRevision: () => null,

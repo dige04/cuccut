@@ -109,7 +109,7 @@ export function createFakeClaude(options: FakeClaudeOptions = {}): FakeClaude {
     queries,
     last() {
       const query = queries.at(-1);
-      if (!query) throw new Error('还没有起过 Query');
+      if (!query) throw new Error('no Query has been started yet');
       return query;
     },
     onTurn(next) {
@@ -343,7 +343,7 @@ export class FakeClaudeQuery implements ClaudeQuery, AsyncIterator<SDKMessage, v
       },
       async ask(name, input, toolUseId = `toolu_${randomUUID().slice(0, 8)}`) {
         const canUseTool = query.options.canUseTool;
-        if (!canUseTool) throw new Error('没有 canUseTool');
+        if (!canUseTool) throw new Error('canUseTool is missing');
         const controller = new AbortController();
         query.#asks.add(controller);
         try {

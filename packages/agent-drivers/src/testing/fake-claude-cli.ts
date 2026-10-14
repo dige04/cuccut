@@ -10,7 +10,7 @@ import type { FakeClaudeCliScenario } from './fake-claude.ts';
 
 const dir = process.env.FAKE_CLAUDE_DIR;
 if (!dir) {
-  process.stderr.write('FAKE_CLAUDE_DIR 没有设置\n');
+  process.stderr.write('FAKE_CLAUDE_DIR is not set\n');
   process.exit(2);
 }
 const scenario = JSON.parse(fs.readFileSync(path.join(dir, 'scenario.json'), 'utf8')) as FakeClaudeCliScenario;
@@ -35,5 +35,5 @@ if (args[0] === 'auth' && args[1] === 'status') {
   // Consistent with 2.1.284: when not logged in, exit code 1, but stdout is still JSON.
   process.exit(scenario.auth.loggedIn ? 0 : 1);
 }
-process.stderr.write(`假 claude 不支持：${args.join(' ')}\n`);
+process.stderr.write(`fake claude does not support: ${args.join(' ')}\n`);
 process.exit(2);

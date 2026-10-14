@@ -25,11 +25,11 @@ function readJson(file: string): Obj | null {
 }
 
 const SIDECARS: [string, string][] = [
-  ['command-history.json', '编辑命令历史'],
-  ['author-work', '智能体写代码包时的工作目录'],
-  ['workspace.snapshot.sqlite', '工作区数据库快照'],
-  ['motion-graphics-ledger.json', '动效生成台账'],
-  ['runtime-project', '运行时的项目副本'],
+  ['command-history.json', 'edit command history'],
+  ['author-work', 'working directory used when the agent writes a code package'],
+  ['workspace.snapshot.sqlite', 'workspace database snapshot'],
+  ['motion-graphics-ledger.json', 'motion-graphics generation ledger'],
+  ['runtime-project', 'runtime copy of the project'],
 ];
 
 export function planExternalProject(dir: string, taken: Set<string>): ProjectPlan | null {
@@ -52,7 +52,7 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
   for (const mediaId of new Set(legacyItems.map((item) => item.mediaId).filter((id): id is string => typeof id === 'string'))) {
     const info = readJson(path.join(dir, 'runtime-media', mediaId, 'metadata.json'));
     if (!info?.relativePath) {
-      report.warnings.push(`媒体 ${mediaId} 没有登记文件位置，没有导入`);
+      report.warnings.push(`media ${mediaId} has no recorded file location, not imported`);
       continue;
     }
     assets.push({
@@ -82,9 +82,9 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
       if (!statSync(full).isDirectory()) continue;
       for (const revision of readdirSync(full)) if (revision.startsWith('sha256-')) revisions++;
     }
-    if (revisions > 0) report.notImported.push(`${revisions} 个代码包版本：合成没有预渲染替身，代码包不登记`);
+    if (revisions > 0) report.notImported.push(`${revisions} code package revision(s): compositions have no pre-rendered stand-in, code packages not recorded`);
   }
-  for (const [rel, what] of SIDECARS) if (existsSync(path.join(dir, rel))) report.notImported.push(`${rel}：${what}`);
+  for (const [rel, what] of SIDECARS) if (existsSync(path.join(dir, rel))) report.notImported.push(`${rel}: ${what}`);
 
   return {
     key: `external-${project.id}`,
@@ -139,20 +139,20 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
       });
     }
     for (const track of usedTracks) {
-      if (track.solo || (track.volume ?? 0) !== 0) drop('轨道的独奏 / 音量', `轨道 ${track.id} 的独奏或轨道音量新格式没有，没有带过来`);
+      if (track.solo || (track.volume ?? 0) !== 0) drop('track solo / volume', `track ${track.id} solo or track volume has no equivalent in the new format, not carried over`);
     }
 
     const keyframes = new Map<string, Obj[]>();
     for (const group of (project.timeline.keyframes ?? []) as Obj[]) {
       for (const property of (group.properties ?? []) as Obj[]) {
         if (property.property === 'volume') keyframes.set(String(group.itemId), property.keyframes ?? []);
-        else drop(`关键帧 ${property.property}`, `实例 ${group.itemId} 的 ${property.property} 关键帧（像素单位）没有带过来`);
+        else drop(`keyframe ${property.property}`, `${property.property} keyframes (pixel units) of item ${group.itemId} not carried over`);
       }
     }
     const transitionCount = (project.timeline.transitions ?? []).length;
-    if (transitionCount > 0) drop('转场', `${transitionCount} 个转场没有带过来`, transitionCount);
+    if (transitionCount > 0) drop('transition', `${transitionCount} transition(s) not carried over`, transitionCount);
     const markerCount = (project.timeline.markers ?? []).length;
-    if (markerCount > 0) drop('标记', `${markerCount} 个标记没有带过来`, markerCount);
+    if (markerCount > 0) drop('marker', `${markerCount} marker(s) not carried over`, markerCount);
 
     const subtitles: Obj[] = [];
     for (const item of legacyItems) {
@@ -166,14 +166,14 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
         case 'hyperframes':
           // A new-format code composition needs a pre-rendered stand-in (same rule as `.ccut` code projects); external projects do not record code-package render results.
           drop(
-            '没有预渲染替身的代码合成',
-            `项目「${name}」的代码合成 ${id}（代码包 ${String(item.bundleId)}）没有预渲染替身：新格式的代码合成要有替身，没有导入，代码包也没有登记`,
+            'code composition without a pre-rendered stand-in',
+            `project "${name}" code composition ${id} (code package ${String(item.bundleId)}) has no pre-rendered stand-in: the new format needs a stand-in for code compositions, so it was not imported and the code package was not recorded`,
           );
           break;
         case 'audio': {
           const info = known.get(`media:${item.mediaId}`);
           if (!info) {
-            report.warnings.push(`音频 ${id} 的媒体 ${item.mediaId} 没有登记成素材，没有导入`);
+            report.warnings.push(`audio ${id}: media ${item.mediaId} is not registered as an asset, not imported`);
             break;
           }
           // The source range cannot exceed the material: the external project's sourceEnd is rounded to frames, so it may exceed the file length by less than one frame.
@@ -190,7 +190,7 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
             }
           }
           if (playUs <= 0n) {
-            report.warnings.push(`音频 ${id} 的源区间在素材之外，没有导入`);
+            report.warnings.push(`audio ${id}: source range is outside the asset, not imported`);
             break;
           }
           // In the external project, easing is recorded at the start of a segment (the keyframe on the left governs up to the next frame); the envelope's `ease` is recorded at the end point: the i-th point takes the easing of frame i−1,
@@ -200,11 +200,11 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
             const easing = i > 0 ? volumeFrames[i - 1]!.easing : undefined;
             const ease = typeof easing === 'string' && easing !== 'linear' && EASE_NAMES.includes(easing) ? easing : undefined;
             if (easing != null && easing !== 'linear' && !ease)
-              drop('关键帧缓动', `音频 ${id} 的音量关键帧缓动 ${String(easing)} 不在缓动表里：按线性`);
-            return { at: frames(k.frame * fps.den, fps.num), volume: volumeOf(k.value, '音量关键帧'), ...(ease ? { ease } : {}) };
+              drop('keyframe easing', `audio ${id}: volume keyframe easing ${String(easing)} is not in the easing table: using linear`);
+            return { at: frames(k.frame * fps.den, fps.num), volume: volumeOf(k.value, 'volume keyframe'), ...(ease ? { ease } : {}) };
           });
           if ((keyframes.get(id) ?? []).length > 256)
-            drop('关键帧（每个属性最多 256 个）', `音频 ${id} 的音量关键帧超过 256 个：只带前 256 个`);
+            drop('keyframes (max 256 per property)', `audio ${id}: more than 256 volume keyframes, only the first 256 carried over`);
           const fade = (seconds: unknown, label: string): Obj =>
             typeof seconds === 'number' && seconds > 0 ? { [label]: mediaTime(micros(clampTo(report, label, seconds, 0, 5))) } : {};
           items.push({
@@ -234,7 +234,7 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
           subtitles.push(item);
           break;
         default:
-          drop(`实例类型 ${item.type}`, `实例 ${id} 的类型 ${item.type} 新格式没有对应，没有导入`);
+          drop(`item type ${item.type}`, `item ${id} of type ${item.type} has no equivalent in the new format, not imported`);
       }
     }
 
@@ -277,7 +277,7 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
       const usPerFrame = (frame: number): number => Number((BigInt(frame) * 1_000_000n * BigInt(fps.den)) / BigInt(fps.num));
       const cues = subtitles.flatMap((item) => {
         const own = JSON.stringify(styleOf(item)) === sharedText ? null : styleOf(item);
-        if (own) count(report.unmapped, '单句字幕自己的样式（留在 cue 的扩展里）');
+        if (own) count(report.unmapped, 'per-cue subtitle style (kept in the cue extensions)');
         const startUs = usPerFrame(item.from);
         const endUs = usPerFrame(item.from + item.durationInFrames);
         return ((item.cues ?? []) as Obj[]).map((cue) => ({
@@ -310,8 +310,8 @@ export function planExternalProject(dir: string, taken: Set<string>): ProjectPla
       });
       for (const [preset, n] of presets) {
         drop(
-          '外部项目的字幕动画预设（成片里没有逐词效果）',
-          `外部项目的字幕动画预设 ${preset}（${n} 句）没有带过来：成片里没有逐词效果，按不动画导入`,
+          'external project subtitle animation preset (no per-word effect in the output)',
+          `external project subtitle animation preset ${preset} (${n} sentence(s)) not carried over: the output has no per-word effect, imported without animation`,
           n,
         );
       }

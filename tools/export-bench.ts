@@ -91,25 +91,25 @@ function parseOptions(argv: string[]): Options {
     else if (arg === "--style") {
       const name = argv[++i] as StyleName;
       if (!STYLES.includes(name))
-        throw new Error(`--style 要是 ${STYLES.join(" / ")} 之一`);
+        throw new Error(`--style must be one of ${STYLES.join(" / ")}`);
       options.style = name;
     } else if (arg === "--worker") options.worker = resolve(argv[++i]!);
     else if (arg === "--runs") options.runs = Number(argv[++i]);
     else if (arg === "--json") options.json = resolve(argv[++i]!);
     else if (arg === "--keep") options.keep = true;
-    else throw new Error(`不认识的参数 ${arg}`);
+    else throw new Error(`Unknown argument ${arg}`);
   }
   if (!Number.isInteger(options.seconds) || options.seconds < 1)
-    throw new Error("--seconds 要是正整数");
+    throw new Error("--seconds must be a positive integer");
   if (!Number.isInteger(options.runs) || options.runs < 1)
-    throw new Error("--runs 要是正整数");
+    throw new Error("--runs must be a positive integer");
   return options;
 }
 
 /** Worker: use the one given; otherwise use release, falling back to debug if it is missing. */
 function findWorker(given: string | null): { path: string; profile: string } {
   if (given) {
-    if (!existsSync(given)) throw new Error(`没有 ${given}`);
+    if (!existsSync(given)) throw new Error(`${given} not found`);
     return {
       path: given,
       profile: given.includes("/release/")
@@ -125,12 +125,12 @@ function findWorker(given: string | null): { path: string; profile: string } {
   const debug = join(target, "debug/export-worker");
   if (existsSync(debug)) {
     console.warn(
-      `警告：没有 ${release}，改用 debug 版（比打包的应用慢得多）；先 cargo build --release -p export-worker`,
+      `Warning: ${release} not found, using the debug build (much slower than the packaged app); run cargo build --release -p export-worker first`,
     );
     return { path: debug, profile: "debug" };
   }
   throw new Error(
-    `没有 export-worker：先 cargo build --release -p export-worker`,
+    `export-worker not found: run cargo build --release -p export-worker first`,
   );
 }
 
@@ -140,9 +140,9 @@ function run(command: string, args: string[]): void {
     encoding: "utf8",
   });
   if (result.error)
-    throw new Error(`${command} 启动失败：${result.error.message}`);
+    throw new Error(`${command} failed to start: ${result.error.message}`);
   if (result.status !== 0)
-    throw new Error(`${command} ${args.join(" ")} 失败：${result.stderr}`);
+    throw new Error(`${command} ${args.join(" ")} failed: ${result.stderr}`);
 }
 
 // ---------- Fixtures ----------
@@ -580,7 +580,7 @@ function which(tool: string): string {
     encoding: "utf8",
   });
   const path = found.stdout?.trim();
-  if (found.status !== 0 || !path) throw new Error(`找不到 ${tool}`);
+  if (found.status !== 0 || !path) throw new Error(`${tool} not found`);
   return path;
 }
 
@@ -654,7 +654,7 @@ function render(
       else
         reject(
           new Error(
-            `Worker 退出码 ${code}：${JSON.stringify(final)}\n${stderr.slice(-2000)}`,
+            `Worker exited with code ${code}: ${JSON.stringify(final)}\n${stderr.slice(-2000)}`,
           ),
         );
     });
@@ -686,8 +686,8 @@ function print(
   extra = "",
 ): void {
   console.log(
-    `${label}: 墙钟 ${round(r.wallSeconds)} s · 合成 ${round(r.renderSeconds)} s · 其余 ${round(r.overheadSeconds)} s · ` +
-      `${r.frames} 帧 · ${round(r.msPerFrame)} ms/帧 · ${round(r.fps, 1)} fps${extra}`,
+    `${label}: wall ${round(r.wallSeconds)} s · render ${round(r.renderSeconds)} s · other ${round(r.overheadSeconds)} s · ` +
+      `${r.frames} frames · ${round(r.msPerFrame)} ms/frame · ${round(r.fps, 1)} fps${extra}`,
   );
 }
 
@@ -696,25 +696,25 @@ async function main(): Promise<void> {
   const worker = findWorker(options.worker);
   const fixture = makeFixture(options.seconds, options.captions, options.style);
   const captionsLabel = {
-    bilingual: "双语字幕",
-    mono: "单语字幕",
-    none: "不烧字幕",
+    bilingual: "bilingual captions",
+    mono: "mono captions",
+    none: "no burned-in captions",
   }[options.captions];
   console.log(
-    `夹具：${WIDTH}×${HEIGHT} ${FPS} fps ${options.seconds} s，${captionsLabel}` +
-      `${options.captions === "none" ? "" : `（${options.style}，${fixture.cues} 句）`}，目录 ${fixture.dir}`,
+    `fixture: ${WIDTH}×${HEIGHT} ${FPS} fps ${options.seconds} s, ${captionsLabel}` +
+      `${options.captions === "none" ? "" : ` (${options.style}, ${fixture.cues} cues)`}, dir ${fixture.dir}`,
   );
   console.log(
-    `Worker：${worker.path}（${worker.profile}），${cpus().length} 核 ${cpus()[0]?.model ?? ""}`,
+    `Worker: ${worker.path} (${worker.profile}), ${cpus().length} cores ${cpus()[0]?.model ?? ""}`,
   );
   const results: Result[] = [];
   try {
     for (const { placement, inputFile } of fixture.inputs) {
       const label =
         placement.id === "cover"
-          ? "cover（旧夹具）"
-          : "contain（真实项目：fullscreen + contain + 黑底）";
-      console.log(`摆法 ${label}`);
+          ? "cover (old fixture)"
+          : "contain (real project: fullscreen + contain + black background)";
+      console.log(`placement ${label}`);
       const own: Result[] = [];
       for (let i = 0; i < options.runs; i++) {
         const loadBefore = loadavg()[0]!;
@@ -743,9 +743,9 @@ async function main(): Promise<void> {
           video: done.video
             ? `${done.video.decoder ?? "-"}→${done.video.encoder}` +
               (done.video.fallbacks.length
-                ? `（回落 ${done.video.fallbacks.map((f: { scope: string; reason: string }) => `${f.scope}:${f.reason}`).join("、")}）`
+                ? `(fallback ${done.video.fallbacks.map((f: { scope: string; reason: string }) => `${f.scope}:${f.reason}`).join("、")})`
                 : "")
-            : "未报",
+            : "not reported",
           outputBytes: statSync(fixture.outputFile).size,
           loadBefore,
           loadAfter,
@@ -756,14 +756,14 @@ async function main(): Promise<void> {
         const warnings = (done.warnings ?? []).length + skipped;
         if (skipped)
           console.warn(
-            `警告：Worker 跳过了字幕（样式没画出来）：${JSON.stringify(done.skipped)}`,
+            `Warning: Worker skipped captions (style not drawn): ${JSON.stringify(done.skipped)}`,
           );
         print(
-          `  第 ${i + 1} 次`,
+          `  run ${i + 1}`,
           result,
-          ` · 解码重开 ${result.decoderRestarts} 次 · 输出 ${round(result.outputBytes / 1e6, 1)} MB · ` +
-            `编解码 ${result.video} · ` +
-            `负载 ${loadBefore.toFixed(1)}→${loadAfter.toFixed(1)}/${cpus().length}${warnings ? ` · 警告与跳过 ${warnings} 项` : ""}`,
+          ` · decoder restarts ${result.decoderRestarts} · output ${round(result.outputBytes / 1e6, 1)} MB · ` +
+            `codec ${result.video} · ` +
+            `load ${loadBefore.toFixed(1)}→${loadAfter.toFixed(1)}/${cpus().length}${warnings ? ` · warnings and skips ${warnings}` : ""}`,
         );
       }
       if (own.length > 1) {
@@ -776,11 +776,11 @@ async function main(): Promise<void> {
           msPerFrame: median(pick("msPerFrame")),
           fps: median(pick("fps")),
         };
-        print(`  中位数（${own.length} 次）`, summary);
+        print(`  median (${own.length} runs)`, summary);
         const best = own.reduce((a, b) =>
           b.renderSeconds < a.renderSeconds ? b : a,
         );
-        print("  最好的一次", best);
+        print("  best run", best);
       }
     }
     // Both placements use identity geometry, so their frame rates should be close; if contain is clearly slower, the identity passthrough with a background has been lost.
@@ -789,9 +789,9 @@ async function main(): Promise<void> {
     const cover = fpsOf("cover");
     const contain = fpsOf("contain");
     console.log(
-      `对比：cover ${round(cover, 1)} fps · contain ${round(contain, 1)} fps · contain/cover ${round(contain / cover, 2)}` +
+      `comparison: cover ${round(cover, 1)} fps · contain ${round(contain, 1)} fps · contain/cover ${round(contain / cover, 2)}` +
         (Math.abs(contain / cover - 1) > 0.1
-          ? "（相差超过 10%：查 subtitle-render 里全屏 + contain + bg 的路径，先看 render_media_element 的恒等直通，再看烧字幕时的合成）"
+          ? " (differs by more than 10%: check the fullscreen + contain + bg path in subtitle-render; first the identity passthrough in render_media_element, then the compositing when burning in captions)"
           : ""),
     );
     if (options.json)
@@ -804,7 +804,7 @@ async function main(): Promise<void> {
         ),
       );
   } finally {
-    if (options.keep) console.log(`保留夹具：${fixture.dir}`);
+    if (options.keep) console.log(`fixture kept: ${fixture.dir}`);
     else rmSync(fixture.dir, { recursive: true, force: true });
   }
 }

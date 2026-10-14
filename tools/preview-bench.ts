@@ -53,7 +53,7 @@ function parseOptions(argv: string[]): Options {
     else if (arg === '--no-ablate') options.ablate = false;
     else if (arg === '--json') options.json = resolve(argv[++i]!);
     else if (arg === '--wasm') options.wasms.push(resolve(argv[++i]!));
-    else throw new Error(`不认识的参数 ${arg}`);
+    else throw new Error(`unknown argument ${arg}`);
   }
   return options;
 }
@@ -108,7 +108,7 @@ function syntheticScenes(): Scene[] {
   const merge = (name: string, parts: string[]): Scene => {
     const scenes = parts.map((part) => {
       const scene = byName.get(part);
-      if (!scene) throw new Error(`夹具里没有场景 ${part}`);
+      if (!scene) throw new Error(`no scene ${part} in the fixture`);
       return scene;
     });
     const base = structuredClone(scenes[0].video.sequences[fixture.sequenceId]);
@@ -158,8 +158,8 @@ function syntheticScenes(): Scene[] {
     };
   };
   return [
-    merge('合成：视频 + 双语字幕', ['video-source-time', 'captions-bilingual']),
-    merge('合成：视频 + 多种元素', [
+    merge('composite: video + bilingual captions', ['video-source-time', 'captions-bilingual']),
+    merge('composite: video + mixed elements', [
       'video-source-time',
       'text-styled',
       'shape-rounded',
@@ -466,7 +466,7 @@ async function measure(kernels: Kernel[], scene: Scene, size: Size, frames: numb
         const label = `${layer.kind}${layer.kind === 'generator' ? `:${(layer as any).content.generator.replace('cuccut.', '')}` : ''}:${layer.itemId.slice(0, 6)}`;
         layers[label] = Math.round((full - without) * 100) / 100;
       }
-      layers['(整帧)'] = Math.round(full * 100) / 100;
+      layers['(whole frame)'] = Math.round(full * 100) / 100;
     }
     results.push({
       scene: scene.name,
@@ -496,7 +496,7 @@ async function main(): Promise<void> {
   const wasms = options.wasms.length > 0 ? options.wasms : [WASM];
   const kernels: Kernel[] = [];
   for (const wasm of wasms) {
-    if (!existsSync(wasm)) throw new Error(`没有 ${wasm}：先运行 npm run build:wasm`);
+    if (!existsSync(wasm)) throw new Error(`missing ${wasm}: run npm run build:wasm first`);
     const base = await RenderPlanner.instantiate(readFileSync(wasm));
     base.addFonts(base.fontFiles().map((name) => new Uint8Array(readFileSync(join(FONTS, name)))));
     kernels.push({ label: wasm.split('/').pop()!, base });
@@ -507,7 +507,7 @@ async function main(): Promise<void> {
   if (options.videos.length > 0) {
     const target = process.env.CARGO_TARGET_DIR ?? join(ROOT, 'target');
     const binary = join(target, 'debug/engine-host');
-    if (!existsSync(binary)) throw new Error(`没有 ${binary}：先 cargo build -p engine-host`);
+    if (!existsSync(binary)) throw new Error(`missing ${binary}: run cargo build -p engine-host first`);
     // The engine host's Home is placed in a temp directory, so the real application data is not touched.
     const home = mkdtempSync(join(tmpdir(), 'cuccut-preview-bench-'));
     process.env.CUCCUT_HOME = home;
@@ -554,12 +554,12 @@ function print(result: Awaited<ReturnType<typeof measure>>[number], labelled: bo
   };
   console.log(
     `${result.scene}${labelled ? ` [${result.kernel}]` : ''} @ ${result.size} t=${result.start}s ` +
-      `(${result.fps} fps, ${result.layers} 层, 首帧 ${result.firstFrameMs} ms, 新尺寸首帧 ${result.newSizeMs} ms, 切尺寸 ${result.switchMs} ms, 负载 ${result.load}) ms p50/p95: ` +
+      `(${result.fps} fps, ${result.layers} layers, first frame ${result.firstFrameMs} ms, first frame at new size ${result.newSizeMs} ms, resize ${result.switchMs} ms, load ${result.load}) ms p50/p95: ` +
       ['plan', 'upload', 'render', 'readback', 'total'].map(stage).join(' · '),
   );
   if (Object.keys(result.perLayer).length > 0) {
     console.log(
-      `  每层（消融）：${Object.entries(result.perLayer)
+      `  per layer (ablation): ${Object.entries(result.perLayer)
         .map(([key, value]) => `${key} ${Math.round(value * 100) / 100}`)
         .join(' · ')}`,
     );

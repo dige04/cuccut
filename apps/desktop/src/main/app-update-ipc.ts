@@ -181,7 +181,7 @@ function launchScript(script: string, log: string): Promise<void> {
 function spawnDetached(file: string, args: readonly string[]): void {
   const child = spawn(file, args, { detached: true, stdio: 'ignore', windowsHide: true });
   // i18n-ignore: diagnostic log, printed only to the main process's terminal, not to the UI
-  child.once('error', (error) => console.error(`[cuccut] 应用更新：起安装器失败：${error.message}`));
+  child.once('error', (error) => console.error(`[cuccut] app update: failed to start the installer: ${error.message}`));
   child.unref();
 }
 
@@ -226,12 +226,12 @@ export function installAppUpdates(): AppUpdateService {
   const { variant } = packagedInfo();
   const mac = { exec, runningBundle, writable, cacheDir, pid: process.pid, launchScript };
   // i18n-ignore: diagnostic log, printed only to the main process's terminal, not to the UI
-  const log = (message: string) => console.log(`[cuccut] 应用更新：${message}`);
+  const log = (message: string) => console.log(`[cuccut] app update: ${message}`);
   // The Windows installer is launched only after the app finishes its normal quit (`before-quit` stops the Runtime, and “restart and update” or install on quit records it): `will-quit` comes after that.
   const installerOnQuit = createPendingLaunch(spawnDetached, log);
   app.on('will-quit', () => {
     // i18n-ignore: diagnostic log, printed only to the main process's terminal, not to the UI
-    if (installerOnQuit.fire()) log('安装器已起');
+    if (installerOnQuit.fire()) log('installer started');
   });
   // After the installer finishes and reopens the app with `--updated`, the installer left in the cache directory is cleared after a while (only files from before this launch are cleared).
   if (platform === 'win32' && packaged && cacheDir && process.argv.includes('--updated')) {

@@ -18,7 +18,7 @@ const TIMEOUT_MS = 120_000;
 
 const arg = process.argv[2];
 if (!arg) {
-  console.error('用法：check-packaged-app.mjs <应用目录> | --dev');
+  console.error('usage: check-packaged-app.mjs <app directory> | --dev');
   process.exit(2);
 }
 
@@ -54,7 +54,7 @@ if (arg === '--dev') {
   for (const { source, fileName } of DISTRIBUTED_NOTICES) {
     const file = path.join(resources, fileName);
     if (!existsSync(file) || !readFileSync(file).equals(readFileSync(path.resolve(HERE, '../../..', source)))) {
-      console.error(`第三方声明缺失或与源码不一致：resources/${fileName}`);
+      console.error(`third-party notice missing or differs from source: resources/${fileName}`);
       process.exit(1);
     }
   }
@@ -62,19 +62,19 @@ if (arg === '--dev') {
   Object.assign(env, packagedResourceEnv(packagedResources(resources)));
 }
 if (!existsSync(command)) {
-  console.error(`没有 ${command}`);
+  console.error(`${command} not found`);
   process.exit(2);
 }
 
 const run = spawnSync(command, [script, '--self-check', '--probe'], { env, encoding: 'utf8', timeout: TIMEOUT_MS, windowsHide: true });
 if (run.error || run.stdout.trim() === '') {
-  console.error(`自检没有跑起来（${run.error?.message ?? `退出码 ${run.status}`}）\n${run.stderr ?? ''}`);
+  console.error(`self-check did not run (${run.error?.message ?? `exit code ${run.status}`})\n${run.stderr ?? ''}`);
   process.exit(2);
 }
 const report = JSON.parse(run.stdout.trim().split('\n').at(-1));
 console.log(JSON.stringify(report, null, 2));
 if (report.problems.length > 0) {
-  console.error(`不通过：\n- ${report.problems.join('\n- ')}`);
+  console.error(`failed:\n- ${report.problems.join('\n- ')}`);
   process.exit(1);
 }
-console.log('通过');
+console.log('passed');

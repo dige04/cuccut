@@ -107,7 +107,7 @@ test('converting: no report while progress keeps moving; reported only when stuc
   expect(warn).not.toHaveBeenCalled();
   advance(STALL_MS + POLL_MS);
   expect(warn).toHaveBeenCalledTimes(1);
-  expect(warn.mock.calls[0]![0]).toContain('转换没有进展');
+  expect(warn.mock.calls[0]![0]).toContain('conversion not progressing');
   expect(watch.ongoing).toMatchObject({ step: 'media-preparing', media: [{ wait: 'preparing', progress }] });
   progress += 0.0001;
   advance(POLL_MS);
@@ -131,7 +131,7 @@ test('a stall at the same step past the threshold is reported once, with a snaps
   advance(POLL_MS);
   expect(warn).toHaveBeenCalledTimes(1);
   expect(watch.report?.stalledMs).toBe(STALL_MS);
-  expect(warn.mock.calls[0]![0]).toContain('渲染内核还没载入完');
+  expect(warn.mock.calls[0]![0]).toContain('render kernel still loading');
   expect(watch.report).toMatchObject({ step: 'planner-loading', ongoing: true, planner: 'loading' });
   expect(watch.report).not.toHaveProperty('painted');
   advance(STALL_MS * 3);

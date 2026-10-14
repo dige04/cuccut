@@ -320,6 +320,6 @@ describe('Windows package swap', () => {
     );
     pending.arm('C:\\cache\\setup.exe', NSIS_UPDATE_ARGS);
     expect(pending.fire()).toBe(false);
-    expect(logs).toEqual(['起安装器失败：ENOENT']);
+    expect(logs).toEqual(['Failed to start installer: ENOENT']);
   });
 });

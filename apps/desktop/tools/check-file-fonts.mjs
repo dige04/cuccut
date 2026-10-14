@@ -30,7 +30,7 @@ async function launch() {
   for (const file of ['renderer/index.html', 'preload/index.js']) {
     // Plain Node cannot read ASAR paths; the Electron child validates them.
     if (!OUT.includes('app.asar') && !existsSync(join(OUT, file))) {
-      console.error(`没有 ${join(OUT, file)}：先运行 npm run build`);
+      console.error(`Missing ${join(OUT, file)}: run npm run build first`);
       process.exit(2);
     }
   }
@@ -47,12 +47,12 @@ async function launch() {
     stdio: ['ignore', 'inherit', 'inherit'],
   });
   const timer = setTimeout(() => {
-    console.error(`Electron ${LAUNCH_TIMEOUT_MS / 1000} 秒没有结束，杀掉`);
+    console.error(`Electron did not exit within ${LAUNCH_TIMEOUT_MS / 1000} s, killing it`);
     child.kill('SIGKILL');
   }, LAUNCH_TIMEOUT_MS);
   const code = await new Promise((done) => {
     child.on('error', (error) => {
-      console.error('Electron 起不来', error);
+      console.error('Electron failed to start', error);
       done(2);
     });
     child.on('exit', (exitCode, signal) => done(exitCode ?? (signal ? 2 : 1)));
@@ -66,7 +66,7 @@ async function launch() {
 async function check() {
   const { app, BrowserWindow, ipcMain, session } = await import('electron');
   const temp = process.argv.find((arg) => arg.startsWith('--cuccut-temp='))?.slice('--cuccut-temp='.length);
-  if (!temp) throw new Error('缺少 --cuccut-temp：用 node 运行这个脚本');
+  if (!temp) throw new Error('Missing --cuccut-temp: run this script with node');
   // Electron's own data (cache, cookies, logs, crash dumps) also goes into the temporary directory.
   for (const name of ['userData', 'sessionData', 'logs', 'crashDumps']) app.setPath(name, join(temp, 'electron', name));
   app.dock?.hide();
@@ -77,7 +77,7 @@ async function check() {
     (code === 0 ? console.log : console.error)(message);
     app.exit(code);
   };
-  setTimeout(() => finish(2, `检查 ${CHECK_TIMEOUT_MS / 1000} 秒没有结束`), CHECK_TIMEOUT_MS).unref();
+  setTimeout(() => finish(2, `Check did not finish within ${CHECK_TIMEOUT_MS / 1000} s`), CHECK_TIMEOUT_MS).unref();
   app.on('window-all-closed', () => {});
 
   await app.whenReady();
@@ -106,7 +106,7 @@ async function check() {
     },
   });
   win.webContents.on('console-message', ({ level, message }) => notes.push(`[renderer:${level}] ${message}`));
-  win.webContents.on('render-process-gone', (_event, details) => finish(1, `渲染进程退出：${details.reason}`));
+  win.webContents.on('render-process-gone', (_event, details) => finish(1, `Renderer process exited: ${details.reason}`));
 
   const assets = join(OUT, 'renderer/assets');
   let shipped = readdirSync(assets).flatMap((name) => {
@@ -118,12 +118,12 @@ async function check() {
     shipped = Object.entries(manifest).map(([font, file]) => ({ font, file }));
   }
   const entry = readdirSync(assets).find((name) => /^kernel-check-.*\.js$/.test(name));
-  if (!entry) return finish(1, `${assets} 里没有自检入口 kernel-check-*.js：渲染进程的构建没有带上它`);
+  if (!entry) return finish(1, `${assets} has no self-check entry kernel-check-*.js: the renderer build did not include it`);
 
   try {
     await win.loadFile(join(OUT, 'renderer/index.html'));
     const page = win.webContents.getURL();
-    if (!page.startsWith('file:')) return finish(1, `页面不在 file:// 下：${page}`);
+    if (!page.startsWith('file:')) return finish(1, `Page is not under file://: ${page}`);
     const result = await win.webContents.executeJavaScript(
       `import(${JSON.stringify(pathToFileURL(join(assets, entry)).href)}).then(() => globalThis.cuccutKernelCheck())`,
       true,
@@ -131,26 +131,26 @@ async function check() {
     const injected = [...result.fonts].sort();
     const expected = shipped.map((item) => item.font).sort();
     const problems = [];
-    if (expected.length === 0) problems.push('产物里没有字体');
+    if (expected.length === 0) problems.push('No fonts in the output');
     if (JSON.stringify(injected) !== JSON.stringify(expected)) {
       const missing = expected.filter((name) => !injected.includes(name));
       const extra = injected.filter((name) => !expected.includes(name));
       problems.push(
-        `内核注入的字体与产物里的不一致：产物有、内核没有 ${missing.join('、') || '无'}；内核要、产物没有 ${extra.join('、') || '无'}`,
+        `Fonts injected by the kernel differ from the output: in the output but not the kernel ${missing.join(', ') || 'none'}; kernel wants but not in the output ${extra.join(', ') || 'none'}`,
       );
     }
     // Font-reading XHRs under file:// have no HTTP status (0) or 200; each request has to be seen individually.
     const unread = shipped.filter((item) => ![0, 200].includes(fontLoads.get(item.file)));
-    if (unread.length > 0) problems.push(`没有看到这些字体经 file:// 读成功：${unread.map((item) => item.file).join('、')}`);
-    if (!(result.box.width > 0 && result.box.height > 0)) problems.push(`内核量出的框不对：${JSON.stringify(result.box)}`);
+    if (unread.length > 0) problems.push(`These fonts were not seen loading successfully via file://: ${unread.map((item) => item.file).join(', ')}`);
+    if (!(result.box.width > 0 && result.box.height > 0)) problems.push(`Kernel measured an invalid box: ${JSON.stringify(result.box)}`);
     if (problems.length > 0) return finish(1, problems.join('\n'));
     finish(
       0,
-      `file:// 字体检查通过：${page}\n` +
-        `  ${injected.length} 份字体经 file:// 读到并注入渲染内核，经内核量出的框 ${result.box.width}×${result.box.height}；` +
-        `拦下的网络请求 ${blocked.length} 个`,
+      `file:// font check passed: ${page}\n` +
+        `  ${injected.length} font(s) read via file:// and injected into the rendering kernel; box measured by the kernel ${result.box.width}×${result.box.height}; ` +
+        `blocked network requests: ${blocked.length}`,
     );
   } catch (error) {
-    finish(1, `渲染内核没有载入：${error instanceof Error ? error.message : String(error)}`);
+    finish(1, `Rendering kernel failed to load: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

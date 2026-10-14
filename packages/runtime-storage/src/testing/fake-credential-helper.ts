@@ -56,14 +56,14 @@ process.stdin.on('end', () => {
   const failure = control.failKeys?.[request.key] ?? control.fail?.[request.op];
   if (failure) {
     // Deliberately includes the secret in the message: the caller must strip it.
-    respond({ ok: false, error: failure, message: `模拟的失败 ${request.secret ?? ''}`.trim() });
+    respond({ ok: false, error: failure, message: `Simulated failure ${request.secret ?? ''}`.trim() });
     return;
   }
   const items = readJson<Record<string, string>>(itemsFile, {});
   switch (request.op) {
     case 'get':
       if (request.key in items) respond({ ok: true, secret: items[request.key] });
-      else respond({ ok: false, error: 'not-found', message: '没有这个条目' });
+      else respond({ ok: false, error: 'not-found', message: 'No such entry' });
       return;
     case 'has':
       respond({ ok: true, exists: request.key in items });
@@ -75,7 +75,7 @@ process.stdin.on('end', () => {
       return;
     case 'delete':
       if (!(request.key in items)) {
-        respond({ ok: false, error: 'not-found', message: '没有这个条目' });
+        respond({ ok: false, error: 'not-found', message: 'No such entry' });
         return;
       }
       delete items[request.key];
@@ -83,6 +83,6 @@ process.stdin.on('end', () => {
       respond({ ok: true });
       return;
     default:
-      respond({ ok: false, error: 'internal', message: '不认识的操作' });
+      respond({ ok: false, error: 'internal', message: 'Unknown operation' });
   }
 });

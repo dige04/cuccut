@@ -55,7 +55,7 @@ const out = path.resolve(values.out ?? path.join(repoRoot, 'packages/runtime-cor
 
 async function getJson(url: string): Promise<unknown> {
   const response = await fetch(url, { headers: { 'User-Agent': 'CucCut catalogue script' } });
-  if (!response.ok) throw new Error(`${url} 返回 HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`);
   const text = await response.text();
   return JSON.parse(stripGuard(text));
 }
@@ -78,7 +78,7 @@ async function loadLicenceDirs(): Promise<Record<string, string[]>> {
   for (const entry of root.tree) {
     if (!(entry.path in LICENCE_DIRS)) continue;
     const sub = (await getJson(`${TREE_API}${entry.sha}`)) as { tree: { path: string; type: string }[]; truncated: boolean };
-    if (sub.truncated) throw new Error(`${entry.path} 的目录树被截断了`);
+    if (sub.truncated) throw new Error(`The directory tree of ${entry.path} was truncated`);
     dirs[entry.path] = sub.tree.filter((t) => t.type === 'tree').map((t) => t.path);
   }
   return dirs;
@@ -120,5 +120,5 @@ for (const meta of [...metadata].sort((a, b) => a.popularity - b.popularity || a
 const lines = families.map((family) => `  ${JSON.stringify(family)}`);
 const text = `{"schema":"cuccut.google-fonts-catalogue/1","generatedAt":"${new Date().toISOString().slice(0, 10)}","families":[\n${lines.join(',\n')}\n]}\n`;
 writeFileSync(out, text);
-process.stdout.write(`写了 ${families.length} 个族（${(text.length / 1024).toFixed(0)} KiB）到 ${path.relative(repoRoot, out)}\n`);
-if (skipped.length > 0) process.stdout.write(`没收（认不出许可或分类）：${skipped.join('、')}\n`);
+process.stdout.write(`Wrote ${families.length} families (${(text.length / 1024).toFixed(0)} KiB) to ${path.relative(repoRoot, out)}\n`);
+if (skipped.length > 0) process.stdout.write(`Skipped (license or category not recognized): ${skipped.join(', ')}\n`);

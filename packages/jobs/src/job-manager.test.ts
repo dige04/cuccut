@@ -546,7 +546,7 @@ describe('JobManager (fake Model Worker)', () => {
     const first = await run('fake@cpu#crash-on-run');
     expect(first).toMatchObject({ state: 'failed', attempt: 2, error: { code: 'MODEL_WORKER_CRASHED' } });
     const details = first.error!.details as { stderrTail: string; exitCode: number };
-    expect(details.stderrTail).toContain('模拟崩溃');
+    expect(details.stderrTail).toContain('simulated crash');
     expect(details.exitCode).toBe(70);
     expect(await exists(stagingOf(first.jobId))).toBe(false);
 

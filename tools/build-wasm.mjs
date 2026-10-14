@@ -15,8 +15,8 @@ ensureCargo();
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const outputs = [
-  { crate: 'preview-wasm', file: 'preview_wasm.wasm', output: 'packages/ui/src/render/generated/preview.wasm', label: '预览 WASM' },
-  { crate: 'editor-wasm', file: 'editor_wasm.wasm', output: 'packages/editor-wasm/src/generated/editor.wasm', label: '编辑语义 WASM' },
+  { crate: 'preview-wasm', file: 'preview_wasm.wasm', output: 'packages/ui/src/render/generated/preview.wasm', label: 'preview WASM' },
+  { crate: 'editor-wasm', file: 'editor_wasm.wasm', output: 'packages/editor-wasm/src/generated/editor.wasm', label: 'editor semantics WASM' },
 ];
 
 // Turn on WASM SIMD (tiny-skia's f32x4 and similar use simd128): frame-by-frame preview rasterization becomes several times faster. Chromium, Electron and Node all support it.
@@ -38,7 +38,7 @@ if (targets.status === 0 && !targets.stdout.split(/\r?\n/).includes('wasm32-unkn
 
 const cargo = ['build', ...outputs.flatMap(({ crate }) => ['-p', crate]), '--target', 'wasm32-unknown-unknown', '--profile', 'wasm'];
 if (!run('cargo', cargo)) {
-  console.error('WASM 没有编出来。缺目标的话先运行：rustup target add wasm32-unknown-unknown');
+  console.error('WASM failed to build. If the target is missing, run first: rustup target add wasm32-unknown-unknown');
   process.exit(1);
 }
 
@@ -64,11 +64,11 @@ for (const { file, output: relative, label } of outputs) {
   mkdirSync(dirname(output), { recursive: true });
   const optimized = spawnSync('wasm-opt', ['-Oz', ...features, built, '-o', output], { cwd: root, stdio: 'inherit' });
   if (optimized.error || optimized.status !== 0) {
-    if (optimized.error && !warned) console.warn('没有找到 wasm-opt，直接使用 cargo 的输出');
+    if (optimized.error && !warned) console.warn('wasm-opt not found, using the cargo output directly');
     warned = true;
     copyFileSync(built, output);
   }
-  console.log(`${label}：${output}（${Math.round(statSync(output).size / 1024)} KB）`);
+  console.log(`${label}: ${output} (${Math.round(statSync(output).size / 1024)} KB)`);
 }
 
 const fontSource = join(root, 'crates/render-raster/assets/fonts');
@@ -81,4 +81,4 @@ for (const name of fonts) {
   copyFileSync(join(fontSource, name), join(fontOutput, name));
   fontBytes += statSync(join(fontOutput, name)).size;
 }
-console.log(`预览字体：${fontOutput}（${fonts.length} 份，${Math.round(fontBytes / 2 ** 20)} MB）`);
+console.log(`preview fonts: ${fontOutput} (${fonts.length} files, ${Math.round(fontBytes / 2 ** 20)} MB)`);

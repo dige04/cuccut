@@ -10,7 +10,7 @@ import type { FakeCodexLogEntry, FakeCodexScenario } from './fake-codex.ts';
 
 const dir = process.env.FAKE_CODEX_DIR;
 if (!dir) {
-  process.stderr.write('FAKE_CODEX_DIR 没有设置\n');
+  process.stderr.write('FAKE_CODEX_DIR is not set\n');
   process.exit(2);
 }
 const scenario = JSON.parse(fs.readFileSync(path.join(dir, 'scenario.json'), 'utf8')) as FakeCodexScenario;
@@ -35,7 +35,7 @@ if (args[0] === 'login' && args[1] === 'status') {
   process.exit(1);
 }
 if (args[0] !== 'app-server') {
-  process.stderr.write(`假 codex 不支持：${args.join(' ')}\n`);
+  process.stderr.write(`fake codex does not support: ${args.join(' ')}\n`);
   process.exit(2);
 }
 
@@ -120,7 +120,7 @@ function handleRequest(message: Message): void {
       if (turn && !turn.done) complete('interrupted');
       return;
     default:
-      send({ id, error: { code: -32601, message: `假 codex 不支持 ${message.method}` } });
+      send({ id, error: { code: -32601, message: `fake codex does not support ${message.method}` } });
   }
 }
 

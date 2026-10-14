@@ -38,7 +38,7 @@ export function loadRenderPlanner(options: { fresh?: boolean } = {}): Promise<Re
   loaded = false;
   const timer = setTimeout(() => {
     if (loading !== attempt) return;
-    console.warn(`[preview] 渲染内核载入 ${LOAD_STALL_MS / 1000} 秒还没有结果：之后的预览重新载入`); // i18n-ignore: dev log
+    console.warn(`[preview] render kernel has not loaded after ${LOAD_STALL_MS / 1000} s: later previews will reload`); // i18n-ignore: dev log
     loading = null;
   }, LOAD_STALL_MS);
   attempt.then(

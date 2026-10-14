@@ -130,15 +130,15 @@ const { values: options } = parseArgs({
 });
 
 function fail(message) {
-  console.error(`打包失败：${message}`);
+  console.error(`Packaging failed: ${message}`);
   process.exit(1);
 }
 
 function run(command, args, env = process.env) {
   console.log(`$ ${command} ${args.join(' ')}`);
   const result = spawnSync(command, args, { cwd: ROOT, env, stdio: 'inherit', shell: false });
-  if (result.error) fail(`${command} 起不来：${result.error.message}`);
-  if (result.status !== 0) fail(`${command} 退出码 ${result.status}`);
+  if (result.error) fail(`${command} failed to start: ${result.error.message}`);
+  if (result.status !== 0) fail(`${command} exited with code ${result.status}`);
 }
 
 /**
@@ -173,7 +173,7 @@ function modelWorkerBuildEnv() {
   if (process.platform === 'win32') {
     const flags = env.NVCC_APPEND_FLAGS ?? '';
     if (/(?:^|[\s,="'])\/(?:MTd?|MDd)(?=$|[\s,"'])/i.test(`${env.NVCC_PREPEND_FLAGS ?? ''} ${flags}`)) {
-      fail('NVCC_PREPEND_FLAGS / NVCC_APPEND_FLAGS 里有 /MT、/MTd 或 /MDd；CUDA 版要动态 CRT（/MD）');
+      fail('NVCC_PREPEND_FLAGS / NVCC_APPEND_FLAGS contain /MT, /MTd or /MDd; the CUDA build needs the dynamic CRT (/MD)');
     }
     if (!/(?:^|[\s,="'])\/MD(?=$|[\s,"'])/i.test(flags)) env.NVCC_APPEND_FLAGS = `${flags} -Xcompiler=/MD`.trim();
   }
@@ -189,24 +189,24 @@ options.target ??= isMac ? macPlan.target : 'x86_64-pc-windows-msvc';
 options.targets ??= isMac ? 'dmg,zip' : 'nsis,zip';
 FEED_TARGET = feedTarget(isMac ? 'darwin' : 'win32', isMac ? macPlan.electronArch : 'x64');
 const variant = VARIANTS[options.variant];
-if (!variant) fail(`不认识的变体 ${options.variant}（cpu、cuda 或 vulkan）`);
+if (!variant) fail(`Unknown variant ${options.variant} (cpu, cuda or vulkan)`);
 if (!isMac && !options.target.includes('windows')) fail(`Unsupported target: ${options.target}`);
 const exe = (name) => isMac ? name : `${name}.exe`;
 const outDir = path.resolve(options.out ?? path.join(DESKTOP, 'dist', isMac ? 'mac' : options.variant));
 const packageTargets = options.targets.split(',').filter(Boolean);
 const build = options.build === undefined || options.build === '' ? 0 : Number(options.build);
-if (!Number.isInteger(build) || build < 0) fail(`--build 要正整数，收到 ${options.build}`);
+if (!Number.isInteger(build) || build < 0) fail(`--build needs a positive integer, got ${options.build}`);
 const downloadBase = options['download-base-url'] || null;
 if (options.local && (downloadBase || build || options['sign-sha1'] || options['sign-keychain'])) fail('Local Mac packages cannot specify a public feed, build number or signing identity');
 if (downloadBase) {
-  if (!/^https:\/\/[^\s?#]+$/.test(downloadBase)) fail(`--download-base-url 要不带查询参数的 https 地址，收到 ${downloadBase}`);
-  if (build === 0) fail('--download-base-url 要同时给 --build');
-  if (!isMac && !packageTargets.includes('nsis')) fail('--download-base-url 要出 nsis 安装器');
+  if (!/^https:\/\/[^\s?#]+$/.test(downloadBase)) fail(`--download-base-url needs an https address without query parameters, got ${downloadBase}`);
+  if (build === 0) fail('--download-base-url also needs --build');
+  if (!isMac && !packageTargets.includes('nsis')) fail('--download-base-url needs the nsis installer');
 }
 const rolloutHours = options['rollout-hours'] === undefined || options['rollout-hours'] === '' ? null : Number(options['rollout-hours']);
 if (rolloutHours !== null) {
-  if (!Number.isFinite(rolloutHours) || rolloutHours < 0) fail(`--rollout-hours 要不小于 0 的数，收到 ${options['rollout-hours']}`);
-  if (!downloadBase) fail('--rollout-hours 要同时给 --download-base-url');
+  if (!Number.isFinite(rolloutHours) || rolloutHours < 0) fail(`--rollout-hours needs a number not less than 0, got ${options['rollout-hours']}`);
+  if (!downloadBase) fail('--rollout-hours also needs --download-base-url');
 }
 
 let sourceCommit = null;
@@ -225,20 +225,20 @@ for (const required of [
   'out/preload/index.js',
   'out/renderer/index.html',
 ]) {
-  if (!existsSync(path.join(DESKTOP, required))) fail(`没有 apps/desktop/${required}：先运行 npm run build`);
+  if (!existsSync(path.join(DESKTOP, required))) fail(`Missing apps/desktop/${required}: run npm run build first`);
 }
-if (!existsSync(path.join(ROOT, 'apps/web/dist/index.html'))) fail('没有 apps/web/dist/index.html：先运行 npm run build:web');
+if (!existsSync(path.join(ROOT, 'apps/web/dist/index.html'))) fail('Missing apps/web/dist/index.html: run npm run build:web first');
 // The slides editor's page and the compiler used by slides_check (docs/design/slides §3).
 const SLIDES_EDITOR_DIST = path.join(ROOT, 'apps/slides-editor/dist');
 const SLIDES_EDITOR_FILES = ['index.html', 'node/compiler.cjs'];
 for (const file of SLIDES_EDITOR_FILES) {
-  if (!existsSync(path.join(SLIDES_EDITOR_DIST, file))) fail(`没有 apps/slides-editor/dist/${file}：先运行 npm run build:slides-editor`);
+  if (!existsSync(path.join(SLIDES_EDITOR_DIST, file))) fail(`Missing apps/slides-editor/dist/${file}: run npm run build:slides-editor first`);
 }
 // The design editor's page, the canvas runtime and the quick-edit Worker (docs/design/canvas §3).
 const DESIGN_EDITOR_DIST = path.join(ROOT, 'apps/design-editor/dist');
 const DESIGN_EDITOR_FILES = ['index.html', 'artifact-type/dc-runtime.js', 'artifact-type/fast-edit-worker.js'];
 for (const file of DESIGN_EDITOR_FILES) {
-  if (!existsSync(path.join(DESIGN_EDITOR_DIST, file))) fail(`没有 apps/design-editor/dist/${file}：先运行 npm run build:design-editor`);
+  if (!existsSync(path.join(DESIGN_EDITOR_DIST, file))) fail(`Missing apps/design-editor/dist/${file}: run npm run build:design-editor first`);
 }
 // The design-system editor's page, its preview page, and the React UMD build used for preview (docs/design/canvas §10.2).
 const DESIGN_SYSTEM_EDITOR_DIST = path.join(ROOT, 'apps/design-system-editor/dist');
@@ -250,7 +250,7 @@ const DESIGN_SYSTEM_EDITOR_FILES = [
 ];
 for (const file of DESIGN_SYSTEM_EDITOR_FILES) {
   if (!existsSync(path.join(DESIGN_SYSTEM_EDITOR_DIST, file))) {
-    fail(`没有 apps/design-system-editor/dist/${file}：先运行 npm run build:design-system-editor`);
+    fail(`Missing apps/design-system-editor/dist/${file}: run npm run build:design-system-editor first`);
   }
 }
 
@@ -270,7 +270,7 @@ if (options['bin-dir']) {
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
   });
-  if (metadata.status !== 0) fail(`cargo metadata：${metadata.stderr}`);
+  if (metadata.status !== 0) fail(`cargo metadata: ${metadata.stderr}`);
   binSource = path.join(JSON.parse(metadata.stdout).target_directory, options.target, 'release');
 }
 
@@ -312,10 +312,10 @@ try {
     )}\n`,
   );
   console.log(
-    `应用的第三方依赖：${
+    `App third-party dependencies: ${
       Object.entries(dependencies)
         .map(([n, v]) => `${n}@${v}`)
-        .join('、') || '无'
+        .join(', ') || 'none'
     }`,
   );
 
@@ -324,7 +324,7 @@ try {
   mkdirSync(bin, { recursive: true });
   for (const name of BUNDLED_EXECUTABLES) {
     const file = path.join(binSource, exe(name));
-    if (!existsSync(file)) fail(`没有 ${file}`);
+    if (!existsSync(file)) fail(`Missing ${file}`);
     if (isMac) runMac('lipo', [file, '-verify_arch', macPlan.intel ? 'x86_64' : 'arm64']);
     cpSync(file, path.join(bin, exe(name)));
   }
@@ -333,10 +333,10 @@ try {
     const redist =
       options['cuda-redist'] ??
       (cudaPath ? [path.join(cudaPath, 'bin', 'x64'), path.join(cudaPath, 'bin')].find((dir) => existsSync(dir)) : undefined);
-    if (!redist) fail('CUDA 版要 --cuda-redist <目录> 或 CUDA_PATH');
+    if (!redist) fail('The CUDA build needs --cuda-redist <dir> or CUDA_PATH');
     for (const dll of CUDA_REDIST_DLLS) {
       const file = path.join(redist, dll);
-      if (!existsSync(file) || statSync(file).size === 0) fail(`没有 CUDA 运行库 ${file}`);
+      if (!existsSync(file) || statSync(file).size === 0) fail(`Missing CUDA runtime library ${file}`);
       cpSync(file, path.join(bin, dll));
     }
     writeFileSync(path.join(bin, 'CUDA-RUNTIME-NOTICE.txt'), CUDA_NOTICE);
@@ -423,7 +423,7 @@ try {
   for (const name of readdirSync(outDir)) {
     const file = path.join(outDir, name);
     if (statSync(file).isFile() && /\.(exe|zip)$/.test(name))
-      console.log(`产物：${file}（${Math.round(statSync(file).size / 2 ** 20)} MB）`);
+      console.log(`Artifact: ${file} (${Math.round(statSync(file).size / 2 ** 20)} MB)`);
   }
 
   // 6. Release report and update source.
@@ -449,7 +449,7 @@ try {
     }
   } else writeReleaseFiles(`${PRODUCT_NAME}-${desktop.version}${buildPart}-win-x64${variant.suffix}`, desktop.version);
 } finally {
-  if (options['keep-staging']) console.log(`临时目录留着：${staging}`);
+  if (options['keep-staging']) console.log(`Temp directory kept: ${staging}`);
   else rmSync(staging, { recursive: true, force: true });
 }
 
@@ -496,7 +496,7 @@ function writeReleaseFiles(stem, version) {
   };
   const reportPath = path.join(outDir, `${stem}-release.json`);
   writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
-  console.log(`发布报告：${reportPath}`);
+  console.log(`Release report: ${reportPath}`);
   if (!downloadBase) return;
   const generatedAt = new Date();
   const manifest = releaseManifest({
@@ -513,11 +513,11 @@ function writeReleaseFiles(stem, version) {
   });
   const text = `${JSON.stringify(manifest, null, 2)}\n`;
   const parsed = parseManifest(text, FEED_TARGET, false, options.variant);
-  if (!parsed.ok) fail(`生成的更新源读不回来：${parsed.error} ${parsed.detail}`);
-  if (rolloutHours && !parsed.rollout) fail('生成的更新源里的分批字段读不回来');
+  if (!parsed.ok) fail(`The generated update feed cannot be read back: ${parsed.error} ${parsed.detail}`);
+  if (rolloutHours && !parsed.rollout) fail('The staged-rollout field in the generated update feed cannot be read back');
   const feedPath = path.join(outDir, report.feed);
   writeFileSync(feedPath, text);
-  console.log(`更新源：${feedPath}`);
+  console.log(`Update feed: ${feedPath}`);
 }
 
 /** Third-party packages that out/main and out/preload actually require (only those listed in apps/desktop's dependencies count; strings in the code do not). */
@@ -553,7 +553,7 @@ function resolvePackage(name, from, optional = false) {
     if (path.dirname(dir) === dir) break;
   }
   if (optional) return null;
-  fail(`找不到依赖 ${name}`);
+  fail(`Dependency not found: ${name}`);
 }
 
 /** Copies these packages and their dependencies (production dependencies and installed optional dependencies) into a flat node_modules. Fails immediately on version conflicts; it does not guess. */
@@ -565,7 +565,7 @@ function copyClosure(names, fromDir, toModules) {
     const dir = resolvePackage(name, from);
     const manifest = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
     if (seen.has(name)) {
-      if (seen.get(name) !== manifest.version) fail(`${name} 有两个版本（${seen.get(name)}、${manifest.version}），要改成嵌套复制`);
+      if (seen.get(name) !== manifest.version) fail(`${name} has two versions (${seen.get(name)}, ${manifest.version}); switch to a nested copy`);
       continue;
     }
     seen.set(name, manifest.version);
@@ -583,31 +583,31 @@ function verifyUnpacked(dir, variantName) {
   const resources = path.join(dir, isMac ? 'Contents/Resources' : 'resources');
   for (const { source, fileName } of DISTRIBUTED_NOTICES) {
     const file = path.join(resources, fileName);
-    if (!existsSync(file)) problems.push(`没有 resources/${fileName}`);
-    else if (!readFileSync(file).equals(readFileSync(path.join(ROOT, source)))) problems.push(`resources/${fileName} 与源码声明不一致`);
+    if (!existsSync(file)) problems.push(`Missing resources/${fileName}`);
+    else if (!readFileSync(file).equals(readFileSync(path.join(ROOT, source)))) problems.push(`resources/${fileName} does not match the source declaration`);
   }
-  if (!existsSync(path.join(dir, isMac ? `Contents/MacOS/${PRODUCT_NAME}` : `${PRODUCT_NAME}.exe`))) problems.push(`没有 ${PRODUCT_NAME}.exe`);
+  if (!existsSync(path.join(dir, isMac ? `Contents/MacOS/${PRODUCT_NAME}` : `${PRODUCT_NAME}.exe`))) problems.push(`Missing ${PRODUCT_NAME}.exe`);
   for (const name of BUNDLED_EXECUTABLES) {
-    if (!existsSync(path.join(resources, RESOURCE_DIRS.bin, exe(name)))) problems.push(`没有 resources/${RESOURCE_DIRS.bin}/${exe(name)}`);
+    if (!existsSync(path.join(resources, RESOURCE_DIRS.bin, exe(name)))) problems.push(`Missing resources/${RESOURCE_DIRS.bin}/${exe(name)}`);
   }
   if (variantName === 'cuda') {
-    for (const dll of CUDA_REDIST_DLLS) if (!existsSync(path.join(resources, RESOURCE_DIRS.bin, dll))) problems.push(`没有 ${dll}`);
+    for (const dll of CUDA_REDIST_DLLS) if (!existsSync(path.join(resources, RESOURCE_DIRS.bin, dll))) problems.push(`Missing ${dll}`);
   }
-  for (const sub of Object.values(RESOURCE_DIRS)) if (!existsSync(path.join(resources, sub))) problems.push(`没有 resources/${sub}`);
-  if (!existsSync(path.join(resources, RESOURCE_DIRS.web, 'index.html'))) problems.push('没有 resources/web/index.html');
+  for (const sub of Object.values(RESOURCE_DIRS)) if (!existsSync(path.join(resources, sub))) problems.push(`Missing resources/${sub}`);
+  if (!existsSync(path.join(resources, RESOURCE_DIRS.web, 'index.html'))) problems.push('Missing resources/web/index.html');
   for (const file of SLIDES_EDITOR_FILES) {
-    if (!existsSync(path.join(resources, RESOURCE_DIRS.slidesEditor, file))) problems.push(`没有 resources/${RESOURCE_DIRS.slidesEditor}/${file}`);
+    if (!existsSync(path.join(resources, RESOURCE_DIRS.slidesEditor, file))) problems.push(`Missing resources/${RESOURCE_DIRS.slidesEditor}/${file}`);
   }
   for (const file of DESIGN_EDITOR_FILES) {
-    if (!existsSync(path.join(resources, RESOURCE_DIRS.designEditor, file))) problems.push(`没有 resources/${RESOURCE_DIRS.designEditor}/${file}`);
+    if (!existsSync(path.join(resources, RESOURCE_DIRS.designEditor, file))) problems.push(`Missing resources/${RESOURCE_DIRS.designEditor}/${file}`);
   }
   for (const file of DESIGN_SYSTEM_EDITOR_FILES) {
     if (!existsSync(path.join(resources, RESOURCE_DIRS.designSystemEditor, file))) {
-      problems.push(`没有 resources/${RESOURCE_DIRS.designSystemEditor}/${file}`);
+      problems.push(`Missing resources/${RESOURCE_DIRS.designSystemEditor}/${file}`);
     }
   }
   const asar = path.join(resources, 'app.asar');
-  if (!existsSync(asar)) problems.push('没有 resources/app.asar');
+  if (!existsSync(asar)) problems.push('Missing resources/app.asar');
   else {
     const entries = new Set(asarEntries(asar));
     for (const entry of [
@@ -619,11 +619,11 @@ function verifyUnpacked(dir, variantName) {
       '/out/preload/index.js',
       '/out/renderer/index.html',
     ]) {
-      if (!entries.has(entry)) problems.push(`asar 里没有 ${entry}`);
+      if (!entries.has(entry)) problems.push(`No ${entry} in asar`);
     }
   }
-  if (problems.length > 0) fail(`解开的包不对：\n- ${problems.join('\n- ')}`);
-  console.log(`解开的包核对通过：${dir}`);
+  if (problems.length > 0) fail(`Unpacked package is wrong:\n- ${problems.join('\n- ')}`);
+  console.log(`Unpacked package check passed: ${dir}`);
 }
 
 /** The asar file listing (the header is JSON wrapped in a Chromium Pickle: its length starts at byte 12, and the JSON itself starts at byte 16). */

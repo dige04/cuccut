@@ -1,6 +1,6 @@
 // Imports cuccut-app's `.ccut` projects and external video projects as videos. Usage is in the README.md in the same directory.
 //
-//   node scripts/legacy-import/import.ts --ccut <旧项目目录> --external <外部项目目录> --out <项目文件夹> [--dry-run] [--replace] [--only <名字片段>]
+//   node scripts/legacy-import/import.ts --ccut <legacy-project-dir> --external <external-project-dir> --out <project-folder> [--dry-run] [--replace] [--only <name-fragment>]
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
@@ -32,9 +32,9 @@ const repoRoot = path.resolve(import.meta.dirname, '..', '..');
 const dryRun = values['dry-run'];
 const outRoot = values.out ? path.resolve(values.out) : undefined;
 const reportDir = values.report ? path.resolve(values.report) : outRoot;
-if (!dryRun && !outRoot) fail('要写视频，用 --out 指定项目文件夹；只想看会导入什么，加 --dry-run');
-if (!reportDir) fail('用 --report 指定报告写到哪里（预演时没有 --out）');
-if (values.ccut.length + values.external.length === 0) fail('用 --ccut <目录> 或 --external <目录> 指定要导入的旧项目');
+if (!dryRun && !outRoot) fail('To write videos, pass --out <project-folder>; to only see what would be imported, add --dry-run');
+if (!reportDir) fail('Use --report to set where the report goes (a dry run has no --out)');
+if (values.ccut.length + values.external.length === 0) fail('Use --ccut <dir> or --external <dir> to name the legacy projects to import');
 
 function fail(message: string): never {
   process.stderr.write(`${message}\n`);
@@ -66,7 +66,7 @@ for (const dir of values.external.map((d) => path.resolve(d))) {
 }
 const wanted = values.only.map((text) => text.toLowerCase());
 const selected = wanted.length === 0 ? plans : plans.filter((plan) => wanted.some((text) => plan.key.toLowerCase().includes(text)));
-if (selected.length === 0) fail('没有选中任何项目');
+if (selected.length === 0) fail('No project selected');
 
 // ── Execution ──────────────────────────────────────────────────────────────
 const started = Date.now();
@@ -79,13 +79,13 @@ if (dryRun) {
       mkdirSync(path.join(reportDir, 'plans'), { recursive: true });
       writeFileSync(path.join(reportDir, 'plans', `${plan.dirName}.json`), `${JSON.stringify({ ...content, documents }, null, 2)}\n`);
     } catch (error) {
-      plan.report.failed.push(`计划失败：${(error as Error).message}`);
+      plan.report.failed.push(`Planning failed: ${(error as Error).message}`);
     }
     progress(plan);
   }
 } else {
   const engine = values.engine ?? path.join(repoRoot, 'target', 'release', 'engine-host');
-  if (!existsSync(engine)) fail(`找不到 engine-host：${engine}\n先运行 cargo build --release -p engine-host`);
+  if (!existsSync(engine)) fail(`engine-host not found: ${engine}\nRun cargo build --release -p engine-host first`);
   const ffprobe = values.ffprobe ?? process.env.CUCCUT_FFPROBE ?? execFileSync('which', ['ffprobe'], { encoding: 'utf8' }).trim();
   mkdirSync(outRoot as string, { recursive: true });
   const host = new EngineHost(engine, ffprobe);
@@ -94,7 +94,7 @@ if (dryRun) {
     try {
       await writeVideo(host, plan, outRoot as string, values.replace);
     } catch (error) {
-      plan.report.failed.push(`导入中断：${(error as Error).message}`);
+      plan.report.failed.push(`Import interrupted: ${(error as Error).message}`);
     }
     progress(plan);
   }
@@ -105,10 +105,10 @@ function progress(plan: ProjectPlan): void {
   const r = plan.report;
   const items = Object.values(r.items).reduce((a, b) => a + b, 0);
   const flags = [
-    r.assets.missing.length ? `缺 ${r.assets.missing.length} 个素材` : '',
-    r.failed.length ? `失败 ${r.failed.length}` : '',
+    r.assets.missing.length ? `missing ${r.assets.missing.length} asset(s)` : '',
+    r.failed.length ? `failed ${r.failed.length}` : '',
   ].filter(Boolean);
-  process.stderr.write(`${r.failed.length ? '✗' : '✓'} ${plan.key} · ${r.kind} · ${items} 个实例 ${flags.join(' · ')}\n`);
+  process.stderr.write(`${r.failed.length ? '✗' : '✓'} ${plan.key} · ${r.kind} · ${items} instance(s) ${flags.join(' · ')}\n`);
 }
 
 // ── Report ──────────────────────────────────────────────────────────────
@@ -127,7 +127,7 @@ const summary = {
 };
 writeFileSync(path.join(reportDir, `import-report${suffix}.json`), `${JSON.stringify(summary, null, 2)}\n`);
 writeFileSync(path.join(reportDir, `import-report${suffix}.md`), markdown(reports));
-process.stderr.write(`报告：${path.join(reportDir, `import-report${suffix}.md`)}\n`);
+process.stderr.write(`Report: ${path.join(reportDir, `import-report${suffix}.md`)}\n`);
 if (reports.some((r) => r.failed.length > 0)) process.exitCode = 1;
 
 function markdown(all: ProjectReport[]): string {
@@ -140,7 +140,7 @@ function markdown(all: ProjectReport[]): string {
     Object.entries(table)
       .sort((a, b) => b[1] - a[1])
       .map(([key, n]) => `${key} ${n}`)
-      .join('，') || '无';
+      .join(', ') || 'none';
   const sum = (pick: (r: ProjectReport) => number): number => all.reduce((n, r) => n + pick(r), 0);
   const kinds: Record<string, number> = {};
   for (const r of all) count(kinds, r.kind);
@@ -150,38 +150,38 @@ function markdown(all: ProjectReport[]): string {
   const cell = (text: string): string => text.replaceAll('|', '\\|');
 
   const lines: string[] = [];
-  lines.push(`# 旧项目导入报告${dryRun ? '（预演，没有写任何视频）' : ''}`, '');
-  lines.push(`- 生成时间：${summary.generatedAt}；导入器 ${IMPORTER.name} v${IMPORTER.version}`);
-  if (outRoot) lines.push(`- 项目文件夹：\`${outRoot}\``);
-  lines.push(`- 项目：${all.length} 个（${list(kinds)}）；有失败项的 ${all.filter((r) => r.failed.length > 0).length} 个`);
+  lines.push(`# Legacy project import report${dryRun ? ' (dry run, no videos written)' : ''}`, '');
+  lines.push(`- Generated: ${summary.generatedAt}; importer ${IMPORTER.name} v${IMPORTER.version}`);
+  if (outRoot) lines.push(`- Project folder: \`${outRoot}\``);
+  lines.push(`- Projects: ${all.length} (${list(kinds)}); with failures: ${all.filter((r) => r.failed.length > 0).length}`);
   lines.push(
-    `- 素材：登记 ${sum((r) => r.assets.linked)} 个（全部按原路径链接），同内容复用 ${sum((r) => r.assets.reused)} 个，` +
-      `找不到文件 ${sum((r) => r.assets.missing.length)} 个，内容与旧项目记录的摘要不一致 ${sum((r) => r.assets.hashChanged.length)} 个`,
+    `- Assets: ${sum((r) => r.assets.linked)} registered (all linked by original path), ${sum((r) => r.assets.reused)} reused for identical content, ` +
+      `${sum((r) => r.assets.missing.length)} file(s) not found, ${sum((r) => r.assets.hashChanged.length)} with content differing from the digest recorded in the legacy project`,
   );
-  lines.push(`- 文档：${list(total((r) => r.documents))}`);
-  lines.push(`- 实例：${list(total((r) => r.items))}；轨道 ${sum((r) => r.tracks)} 条`);
+  lines.push(`- Documents: ${list(total((r) => r.documents))}`);
+  lines.push(`- Instances: ${list(total((r) => r.items))}; ${sum((r) => r.tracks)} track(s)`);
   lines.push(
-    `- 时间：画面吸附到帧的最大偏移 ${Math.max(0, ...all.map((r) => r.time.maxSnapMs)).toFixed(2)} ms；尾部收进素材时长 ${sum((r) => r.time.clampedTails)} 处`,
+    `- Timing: max frame-snap offset ${Math.max(0, ...all.map((r) => r.time.maxSnapMs)).toFixed(2)} ms; ${sum((r) => r.time.clampedTails)} tail(s) clamped to asset length`,
   );
-  lines.push(`- 写进序列的对象：${list(total((r) => r.written))}`);
+  lines.push(`- Objects written to the sequence: ${list(total((r) => r.written))}`);
   lines.push(
-    `- 词锚点：求出 ${sum((r) => r.anchors.resolved)} 个元素（写成 speech-anchor），求不出 ${sum((r) => r.anchors.unresolved)} 个（没有导入）`,
+    `- Word anchors: ${sum((r) => r.anchors.resolved)} element(s) resolved (written as speech-anchor), ${sum((r) => r.anchors.unresolved)} unresolved (not imported)`,
   );
-  lines.push(`- 生效长度比写入短的单侧转场：${sum((r) => r.shortenedTransitions.length)} 条`);
-  lines.push(`- 超出取值范围、夹进范围的：${list(total((r) => r.clamped))}`);
-  lines.push(`- 新格式不接受、没有带过来的：${list(total((r) => r.dropped))}`);
-  lines.push(`- 没有对应字段、原样留在扩展里的：${list(total((r) => r.unmapped))}`);
-  lines.push(`- 不适用（新格式里没有这种行为或对应，键里写原因）：${list(total((r) => r.notApplicable))}`);
-  lines.push(`- 导入时估算的：${list(total((r) => r.estimated))}`, '');
+  lines.push(`- One-sided transitions shorter than written: ${sum((r) => r.shortenedTransitions.length)}`);
+  lines.push(`- Out-of-range values clamped: ${list(total((r) => r.clamped))}`);
+  lines.push(`- Not accepted by the new format, not carried over: ${list(total((r) => r.dropped))}`);
+  lines.push(`- No matching field, kept as-is in extensions: ${list(total((r) => r.unmapped))}`);
+  lines.push(`- Not applicable (no equivalent in the new format; reason given in the key): ${list(total((r) => r.notApplicable))}`);
+  lines.push(`- Estimated on import: ${list(total((r) => r.estimated))}`, '');
 
   lines.push(
-    '## 各项目',
+    '## Per project',
     '',
-    '| 项目 | 类型 | 帧率 | 画布 | 素材 | 文档 | 实例 | 时长 | 提示 | 失败 |',
+    '| Project | Kind | FPS | Canvas | Assets | Docs | Items | Duration | Notes | Failed |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   );
   for (const r of all) {
-    const assets = `${r.assets.linked + r.assets.reused}${r.assets.missing.length ? `（缺 ${r.assets.missing.length}）` : ''}`;
+    const assets = `${r.assets.linked + r.assets.reused}${r.assets.missing.length ? ` (missing ${r.assets.missing.length})` : ''}`;
     const docs = Object.values(r.documents).reduce((a, b) => a + b, 0);
     const items = Object.values(r.items).reduce((a, b) => a + b, 0);
     lines.push(
@@ -196,16 +196,16 @@ function markdown(all: ProjectReport[]): string {
       r.fps.note ||
       r.canvas.note,
   );
-  if (noted.length > 0) lines.push('## 需要留意的项目', '');
+  if (noted.length > 0) lines.push('## Projects to review', '');
   for (const r of noted) {
     lines.push(`### ${path.basename(r.source)}`, '');
-    if (r.fps.note) lines.push(`- 帧率：${r.fps.note}（旧值 ${r.fps.legacy ?? '无'}）`);
-    if (r.canvas.note) lines.push(`- 画布：${r.canvas.note}`);
-    for (const text of r.failed) lines.push(`- **失败**：${text}`);
-    for (const file of r.assets.missing) lines.push(`- 找不到素材文件：\`${file}\``);
-    for (const file of r.assets.hashChanged) lines.push(`- 文件内容与旧项目记录的摘要不一致：\`${file}\``);
+    if (r.fps.note) lines.push(`- FPS: ${r.fps.note} (legacy value ${r.fps.legacy ?? 'none'})`);
+    if (r.canvas.note) lines.push(`- Canvas: ${r.canvas.note}`);
+    for (const text of r.failed) lines.push(`- **Failed**: ${text}`);
+    for (const file of r.assets.missing) lines.push(`- Asset file not found: \`${file}\``);
+    for (const file of r.assets.hashChanged) lines.push(`- File content differs from the digest recorded in the legacy project: \`${file}\``);
     for (const t of r.shortenedTransitions)
-      lines.push(`- 实例 ${t.sourceId} 的 ${t.side} 转场写入 ${t.durationFrames} 帧，实例太短，生效 ${t.effectiveFrames} 帧`);
+      lines.push(`- Instance ${t.sourceId} ${t.side} transition written as ${t.durationFrames} frame(s); instance too short, effective ${t.effectiveFrames} frame(s)`);
     for (const text of r.warnings) lines.push(`- ${text}`);
     lines.push('');
   }
@@ -213,12 +213,12 @@ function markdown(all: ProjectReport[]): string {
   const left: Record<string, number> = {};
   for (const r of all) for (const text of r.notImported) count(left, text);
   if (Object.keys(left).length > 0) {
-    lines.push('## 没有导入的旧数据', '');
-    for (const [text, n] of Object.entries(left).sort((a, b) => b[1] - a[1])) lines.push(`- ${text}（${n} 个项目）`);
+    lines.push('## Legacy data not imported', '');
+    for (const [text, n] of Object.entries(left).sort((a, b) => b[1] - a[1])) lines.push(`- ${text} (${n} project(s))`);
     lines.push('');
   }
   if (skipped.length > 0) {
-    lines.push('## 不是项目、跳过的条目', '');
+    lines.push('## Skipped entries (not projects)', '');
     for (const dir of skipped) lines.push(`- \`${dir}\``);
     lines.push('');
   }

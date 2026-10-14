@@ -120,16 +120,16 @@ export interface WatchOptions {
 
 // i18n-ignore-start: dev log
 const STEP_LABELS: Record<StallStep, string> = {
-  'planner-loading': '渲染内核还没载入完',
-  'no-video': '渲染内核好了，还没交给它视频',
-  'video-error': '视频交给渲染内核时出错',
-  'no-plan': '还没求出帧计划',
-  'media-pending': '在等媒体',
-  'media-preparing': '在等兼容副本，转换没有进展',
-  'documents-pending': '在等字幕文档',
-  'fonts-loading': '在等本机字体',
-  'not-painted': '有一帧要画，画布上一直没换',
-  'no-canvas': '有一帧要画，还没有画布',
+  'planner-loading': 'render kernel still loading',
+  'no-video': 'render kernel ready, no video handed to it yet',
+  'video-error': 'error handing the video to the render kernel',
+  'no-plan': 'frame plan not computed yet',
+  'media-pending': 'waiting for media',
+  'media-preparing': 'waiting for a compatible copy, conversion not progressing',
+  'documents-pending': 'waiting for caption documents',
+  'fonts-loading': 'waiting for local fonts',
+  'not-painted': 'a frame is due to paint, the canvas has not changed',
+  'no-canvas': 'a frame is due to paint, no canvas yet',
 };
 // i18n-ignore-end
 
@@ -287,7 +287,7 @@ export class PreviewWatch {
     };
     this.#report = report;
     // i18n-ignore: dev log
-    this.#warn(`[preview] 预览卡住了：${STEP_LABELS[step]}（${Math.round((now - this.#since) / 1000)} 秒）`, report);
+    this.#warn(`[preview] preview stalled: ${STEP_LABELS[step]} (${Math.round((now - this.#since) / 1000)} s)`, report);
     this.#notify(report);
   }
 
@@ -299,7 +299,7 @@ export class PreviewWatch {
     this.#lastError = { message, at: last?.message === message && now - last.at < ERROR_REPEAT_MS ? last.at : now };
     if (last?.message === message && now - last.at < ERROR_REPEAT_MS) return;
     // i18n-ignore: dev log
-    this.#error(`[preview] ${where}时抛了意外的错，预览接着跑`, error);
+    this.#error(`[preview] unexpected error in ${where}, preview keeps running`, error);
   }
 
   #reset(): void {
@@ -321,7 +321,7 @@ export class PreviewWatch {
       try {
         listener(report);
       } catch (error) {
-        this.noteError('卡住通知', error); // i18n-ignore: dev log
+        this.noteError('stall notification', error); // i18n-ignore: dev log
       }
     }
   }
@@ -333,7 +333,7 @@ export class PreviewWatch {
         this.check();
       } catch (error) {
         // The diagnostics themselves failing should not affect the preview.
-        this.noteError('卡住诊断', error); // i18n-ignore: dev log
+        this.noteError('stall diagnostics', error); // i18n-ignore: dev log
       }
       if (this.#running) this.#arm();
     }, POLL_MS);

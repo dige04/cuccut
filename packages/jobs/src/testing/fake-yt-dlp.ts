@@ -25,7 +25,7 @@ if (argv.includes('--version')) {
 
 const separator = argv.indexOf('--');
 const url = separator >= 0 ? argv[separator + 1] : undefined;
-if (!url || separator !== argv.length - 2) fail('ERROR: fake yt-dlp: 链接应在 -- 之后，并且是最后一个参数', 2);
+if (!url || separator !== argv.length - 2) fail('ERROR: fake yt-dlp: the URL must come after -- and be the last argument', 2);
 const route = new URL(url!).pathname;
 
 const option = (name: string): string | undefined => {
@@ -74,7 +74,7 @@ if (argv.includes('--dump-single-json')) {
 }
 
 const template = option('-o');
-if (!template) fail('ERROR: fake yt-dlp: 没有 -o', 2);
+if (!template) fail('ERROR: fake yt-dlp: no -o', 2);
 if (route === '/nospace') fail('ERROR: unable to write data: [Errno 28] No space left on device');
 
 const media = template!.replace('%(ext)s', 'wav');

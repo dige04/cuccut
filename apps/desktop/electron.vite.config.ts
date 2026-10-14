@@ -51,7 +51,7 @@ export function shipEditorWasm(): Plugin {
     apply: 'build',
     generateBundle() {
       if (!existsSync(source)) {
-        this.warn(`没有 ${source}，先运行 npm run build:wasm`);
+        this.warn(`missing ${source}, run npm run build:wasm first`);
         return;
       }
       this.emitFile({ type: 'asset', fileName: 'generated/editor.wasm', source: readFileSync(source) });
@@ -75,15 +75,15 @@ export function checkPreviewFonts(source = resolve(import.meta.dirname, '../../p
       base = config.base;
     },
     generateBundle(_options, bundle) {
-      if (base !== '' && !base.startsWith('./')) this.error(`渲染进程的 base 是 ${base}：打包后的 file:// 页面读不到字体，要用相对的 ./`);
+      if (base !== '' && !base.startsWith('./')) this.error(`the renderer base is ${base}: the packaged file:// page cannot read fonts, use a relative ./`);
       const fonts = existsSync(source) ? readdirSync(source).filter((name) => name.endsWith('.ttf')) : [];
-      if (fonts.length === 0) this.error(`${source} 里没有字体，先运行 npm run build:wasm`);
+      if (fonts.length === 0) this.error(`no fonts in ${source}, run npm run build:wasm first`);
       const shipped = new Set<string>();
       for (const output of Object.values(bundle)) {
         if (output.type === 'asset') for (const original of output.originalFileNames) shipped.add(resolve(root, original));
       }
       const missing = fonts.filter((name) => !shipped.has(resolve(source, name)));
-      if (missing.length > 0) this.error(`预览字体没有进产物：${missing.join('、')}`);
+      if (missing.length > 0) this.error(`preview fonts missing from the output: ${missing.join(', ')}`);
     },
   };
 }

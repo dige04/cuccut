@@ -83,7 +83,7 @@ async function waitFor<T>(probe: () => T | null | undefined, timeoutMs: number, 
     const value = probe();
     if (value) return value;
     // i18n-ignore: diagnostic output of a development benchmark, not shown in the UI
-    if (performance.now() > deadline) throw new Error(`等 ${what} 超过 ${timeoutMs} ms`);
+    if (performance.now() > deadline) throw new Error(`Waiting for ${what} took longer than ${timeoutMs} ms`);
     await delay(20);
   }
 }
@@ -131,14 +131,14 @@ globalThis.cuccutPreviewBench = async (input) => {
   // Leave the editor first and wait for the previous video's preview canvas to be torn down, so it is not mistaken for this one's.
   useShell.getState().navigate('/space');
   // i18n-ignore: diagnostic output of a development benchmark (names of the items being waited on), not shown in the UI
-  await waitFor(() => !document.querySelector(PREVIEW_CANVAS), input.openTimeoutMs, '上一个预览关掉');
+  await waitFor(() => !document.querySelector(PREVIEW_CANVAS), input.openTimeoutMs, 'previous preview to close');
   const opened = performance.now();
   useShell.getState().openVideo({ projectId: input.projectId, path: input.path });
   const canvas = await waitFor(
     () => document.querySelector<HTMLCanvasElement>(PREVIEW_READY),
     input.openTimeoutMs,
     // i18n-ignore: diagnostic output of a development benchmark (names of the items being waited on), not shown in the UI
-    '预览就绪',
+    'preview ready',
   ).catch((error: unknown) => {
     // If readiness never comes, include the engine's stall diagnostics (which step it is stuck on).
     const stuck = document.querySelector<HTMLCanvasElement>(PREVIEW_CANVAS);
@@ -146,9 +146,9 @@ globalThis.cuccutPreviewBench = async (input) => {
     throw report ? new Error(`${error instanceof Error ? error.message : String(error)}: ${JSON.stringify(report)}`) : error;
   });
   // i18n-ignore: diagnostic output of a development benchmark (names of the items being waited on), not shown in the UI
-  const engine = await waitFor(() => previewEngineOf(canvas), input.openTimeoutMs, '预览引擎');
+  const engine = await waitFor(() => previewEngineOf(canvas), input.openTimeoutMs, 'preview engine');
   // i18n-ignore: same as above
-  await waitFor(() => engine.plan, input.openTimeoutMs, '帧计划');
+  await waitFor(() => engine.plan, input.openTimeoutMs, 'frame plan');
   const openMs = performance.now() - opened;
   // Wait until the first frame is drawn (all media has arrived) before dragging; otherwise what gets measured is loading.
   const openExact = engine.exact ? performance.now() : await nextExact(canvas, engine, input.openTimeoutMs);
@@ -204,7 +204,7 @@ globalThis.cuccutPreviewBench = async (input) => {
   requestAnimationFrame(frame);
 
   // i18n-ignore: diagnostic output of a development benchmark (names of the items being waited on), not shown in the UI
-  const play = await waitFor(() => document.querySelector<HTMLButtonElement>(PLAY_BUTTON), 5000, '播放按钮');
+  const play = await waitFor(() => document.querySelector<HTMLButtonElement>(PLAY_BUTTON), 5000, 'play button');
   const firstPresent = nextPresent(canvas);
   const started = performance.now();
   play.click();

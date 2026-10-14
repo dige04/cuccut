@@ -19,7 +19,7 @@ const ENTRY = 'model-assets-check.js';
 const TIMEOUT_MS = 30_000;
 
 if (!existsSync(join(OUT_MAIN, ENTRY))) {
-  console.error(`没有 ${join(OUT_MAIN, ENTRY)}：先运行 npm run build`);
+  console.error(`Missing ${join(OUT_MAIN, ENTRY)}: run npm run build first`);
   process.exit(2);
 }
 const { default: electron } = await import('electron');
@@ -31,7 +31,7 @@ function resolveIn(mainDir, assetsDir) {
   if (assetsDir) env.CUCCUT_MODEL_ASSETS_DIR = assetsDir;
   const run = spawnSync(electron, [join(mainDir, ENTRY)], { env, encoding: 'utf8', timeout: TIMEOUT_MS });
   if (run.error || run.status !== 0) {
-    console.error(`自检入口没有跑起来（${run.error?.message ?? `退出码 ${run.status}`}）\n${run.stderr ?? ''}`);
+    console.error(`Self-check entry failed to run (${run.error?.message ?? `exit code ${run.status}`})\n${run.stderr ?? ''}`);
     process.exit(2);
   }
   return JSON.parse(run.stdout.trim().split('\n').at(-1));
@@ -56,12 +56,12 @@ const report = [];
 
 // 1. In place.
 const local = resolveIn(OUT_MAIN, null);
-if (local.files.length < 2) problems.push(`原地：只解析出 ${local.files.length} 个文件，应有自测样本与内置音色`);
-if (local.dir !== SOURCE_ASSETS) problems.push(`原地：模型数据目录是 ${local.dir}，应是仓库里的 ${SOURCE_ASSETS}`);
+if (local.files.length < 2) problems.push(`In place: resolved only ${local.files.length} files, expected a self-test sample and the built-in voices`);
+if (local.dir !== SOURCE_ASSETS) problems.push(`In place: model data directory is ${local.dir}, expected the repository's ${SOURCE_ASSETS}`);
 for (const { asset, file } of local.files) {
-  if (!file || !isFile(file)) problems.push(`原地：${asset} 解析到 ${file ?? '（找不到目录）'}，那里没有文件`);
+  if (!file || !isFile(file)) problems.push(`In place: ${asset} resolved to ${file ?? '(directory not found)'}, but no file is there`);
 }
-report.push(`原地：${local.files.length} 个文件都在 ${local.dir}`);
+report.push(`In place: ${local.files.length} files, all in ${local.dir}`);
 
 // 2. Simulated packaging.
 const temp = mkdtempSync(join(tmpdir(), 'cuccut-model-assets-'));
@@ -72,14 +72,14 @@ try {
   cpSync(SOURCE_ASSETS, assets, { recursive: true });
   const packaged = resolveIn(main, assets);
   if (packaged.files.length !== local.files.length)
-    problems.push(`模拟打包：解析出 ${packaged.files.length} 个文件，原地是 ${local.files.length} 个`);
+    problems.push(`Simulated packaging: resolved ${packaged.files.length} files, in place there were ${local.files.length}`);
   for (const { asset, file } of packaged.files) {
     if (!file || !inside(assets, file) || !isFile(file))
-      problems.push(`模拟打包：${asset} 解析到 ${file ?? '（找不到目录）'}，不是 ${assets} 里的文件`);
+      problems.push(`Simulated packaging: ${asset} resolved to ${file ?? '(directory not found)'}, not a file in ${assets}`);
   }
-  report.push(`模拟打包：${packaged.files.length} 个文件都在 <resources>/model-assets`);
+  report.push(`Simulated packaging: ${packaged.files.length} files, all in <resources>/model-assets`);
   const bare = resolveIn(main, null);
-  if (bare.dir !== null) problems.push(`模拟打包：不给 CUCCUT_MODEL_ASSETS_DIR 时还找到了 ${bare.dir}（应该找不到）`);
+  if (bare.dir !== null) problems.push(`Simulated packaging: still found ${bare.dir} without CUCCUT_MODEL_ASSETS_DIR (should not be found)`);
 } finally {
   rmSync(temp, { recursive: true, force: true });
 }
@@ -88,4 +88,4 @@ if (problems.length > 0) {
   console.error(problems.join('\n'));
   process.exit(1);
 }
-console.log(`模型数据检查通过：\n  ${report.join('\n  ')}`);
+console.log(`Model data check passed:\n  ${report.join('\n  ')}`);

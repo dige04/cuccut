@@ -85,7 +85,7 @@ export function CaptionThumb({ root, kinds, px }: { root: Json; kinds: readonly 
       try {
         return captionFrame(planner, sample!, seconds, width, height).blits[0]!.image;
       } catch (error) {
-        console.warn('缩略图画不出来', error); // i18n-ignore: dev log
+        console.warn('thumbnail could not be drawn', error); // i18n-ignore: dev log
         return null;
       }
     };
@@ -138,7 +138,7 @@ export function CaptionThumb({ root, kinds, px }: { root: Json; kinds: readonly 
       try {
         sample = captionSample(planner, root, lines, px * ratio, width, height);
       } catch (error) {
-        console.warn('缩略图画不出来', error); // i18n-ignore: dev log
+        console.warn('thumbnail could not be drawn', error); // i18n-ignore: dev log
         paint(null);
         return;
       }

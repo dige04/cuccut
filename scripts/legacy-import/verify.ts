@@ -1,7 +1,7 @@
 // Checks after import: open each video in the project folder one by one, confirm the materials are all found at their original paths and were not copied into the video directory, the document bodies can all be read,
 // the instances all use version 3 video-format fields (no old `cuccut.legacy-*` wrapper; only the source note remains in the import extension), and the body of the cut-point set holds.
 //
-//   node scripts/legacy-import/verify.ts <项目文件夹> [--engine <engine-host>]
+//   node scripts/legacy-import/verify.ts <project folder> [--engine <engine-host>]
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -48,21 +48,21 @@ const IMPORT_KEYS = new Set(['sourceId', 'bcfClip', 'mediaId', 'itemCount']);
 /** Body of the cut-point set: sorted by t0, non-overlapping, integer timescale, not exceeding the material. */
 function cutSetProblems(body: Record<string, any>, durationSeconds: number | undefined, items: Set<string>): string[] {
   const out: string[] = [];
-  if (body.schema !== 'cuccut.cut-set/1' || body.clock !== 'source-asset') out.push('schema 或 clock 不对');
-  if (!Number.isSafeInteger(body.timescale) || body.timescale <= 0) out.push(`timescale 不是正整数：${body.timescale}`);
+  if (body.schema !== 'cuccut.cut-set/1' || body.clock !== 'source-asset') out.push('schema or clock is wrong');
+  if (!Number.isSafeInteger(body.timescale) || body.timescale <= 0) out.push(`timescale is not a positive integer: ${body.timescale}`);
   let last = -1n;
   for (const cut of (body.cuts ?? []) as Record<string, any>[]) {
     if (!/^\d+$/.test(String(cut.t0)) || !/^\d+$/.test(String(cut.t1))) {
-      out.push(`剪口 ${cut.id} 的刻度不是整数`);
+      out.push(`cut point ${cut.id} has a non-integer tick`);
       continue;
     }
     const [t0, t1] = [BigInt(cut.t0), BigInt(cut.t1)];
-    if (t0 >= t1) out.push(`剪口 ${cut.id} 为空`);
-    if (t0 < last) out.push(`剪口 ${cut.id} 与前一个重叠或没有排序`);
+    if (t0 >= t1) out.push(`cut point ${cut.id} is empty`);
+    if (t0 < last) out.push(`cut point ${cut.id} overlaps the previous one or is not sorted`);
     last = t1;
-    if (durationSeconds != null && Number(t1) / body.timescale > durationSeconds + 1e-6) out.push(`剪口 ${cut.id} 超出素材时长`);
+    if (durationSeconds != null && Number(t1) / body.timescale > durationSeconds + 1e-6) out.push(`cut point ${cut.id} is past the end of the source`);
   }
-  for (const id of (body.scopeItemIds ?? []) as string[]) if (!items.has(id)) out.push(`作用实例 ${id} 不存在`);
+  for (const id of (body.scopeItemIds ?? []) as string[]) if (!items.has(id)) out.push(`scope item ${id} does not exist`);
   return out;
 }
 
@@ -86,7 +86,7 @@ if (existsSync(reportFile)) {
     const name = path.basename(project.source);
     if (!project.videoDir || !existsSync(path.join(root, path.basename(project.videoDir), 'video.db')))
       problems.push(`${name}：报告中的视频没有写出`);
-    for (const failure of project.failed) problems.push(`${name}：导入失败：${failure}`);
+    for (const failure of project.failed) problems.push(`${name}: import failed: ${failure}`);
     for (const missing of project.assets.missing) problems.push(`${name}：导入时缺失素材：${missing}`);
   }
 }
@@ -96,59 +96,59 @@ for (const entry of readdirSync(root).sort((a, b) => a.localeCompare(b))) {
   const dir = path.join(root, entry);
   if (!existsSync(path.join(dir, 'video.db'))) continue;
   videos++;
-  const note = (text: string): number => problems.push(`${entry}：${text}`);
+  const note = (text: string): number => problems.push(`${entry}: ${text}`);
   try {
     const { videoId, snapshot } = await host.request<{ videoId: string; snapshot: Snapshot }>('videos.open', { path: dir });
     try {
-      if (snapshot.schemaVersion !== 3) note(`schemaVersion 是 ${snapshot.schemaVersion}，不是 3`);
+      if (snapshot.schemaVersion !== 3) note(`schemaVersion is ${snapshot.schemaVersion}, not 3`);
       for (const asset of Object.values(snapshot.assets)) {
         totals.assets++;
         const blob = await host.request<{ path: string; storage: string }>('assets.blobPath', { videoId, assetId: asset.id });
         if (blob.storage === 'linked') totals.linked++;
-        else note(`素材 ${asset.name} 不是链接素材（${blob.storage}）`);
-        if (!existsSync(blob.path)) note(`素材 ${asset.name} 的文件找不到：${blob.path}`);
-        if (blob.path.startsWith(dir + path.sep)) note(`素材 ${asset.name} 在视频目录里：${blob.path}`);
+        else note(`asset ${asset.name} is not a linked asset (${blob.storage})`);
+        if (!existsSync(blob.path)) note(`asset ${asset.name} file not found: ${blob.path}`);
+        if (blob.path.startsWith(dir + path.sep)) note(`asset ${asset.name} is inside the video directory: ${blob.path}`);
       }
       for (const doc of Object.values(snapshot.documents)) {
         totals.documents++;
         const content = await host.request<{ body?: unknown }>('documents.read', { videoId, documentId: doc.id });
-        if (content.body == null) note(`文档 ${doc.name}（${doc.kind}）读不出正文`);
+        if (content.body == null) note(`document ${doc.name} (${doc.kind}) body cannot be read`);
         if (doc.kind === 'cut-set' && content.body != null) {
           const asset = doc.sourceAssetId ? snapshot.assets[doc.sourceAssetId] : undefined;
           const revision = (asset as { revisions?: Record<string, { duration?: { ticks: string; timescale: number } }> } | undefined)
             ?.revisions?.[asset?.currentRevision ?? ''];
           const duration = revision?.duration ? Number(revision.duration.ticks) / revision.duration.timescale : undefined;
           const ids = new Set(snapshot.sequences[snapshot.rootSequenceId].items.map((item) => String(item.id)));
-          for (const text of cutSetProblems(content.body as Record<string, any>, duration, ids)) note(`剪口集合 ${doc.name}：${text}`);
+          for (const text of cutSetProblems(content.body as Record<string, any>, duration, ids)) note(`cut-set ${doc.name}: ${text}`);
         }
       }
       const items = snapshot.sequences[snapshot.rootSequenceId].items;
       totals.items += items.length;
       for (const item of items) {
-        if (!ITEM_TYPES.has(String(item.type))) note(`实例 ${String(item.id)} 的类型 ${String(item.type)} 不认识`);
+        if (!ITEM_TYPES.has(String(item.type))) note(`instance ${String(item.id)} has unknown type ${String(item.type)}`);
         for (const key of ['style', 'shape', 'parameterValues'] as const) {
           const schema = (item[key] as { schema?: unknown } | undefined)?.schema;
           if (typeof schema === 'string' && schema.startsWith('cuccut.legacy'))
-            note(`实例 ${String(item.id)} 的 ${key} 还是旧的包装 ${schema}`);
+            note(`instance ${String(item.id)} still has the old wrapper ${schema} in ${key}`);
         }
         const imported = (item.extensions as Record<string, Record<string, unknown>> | undefined)?.['cuccut.import'] ?? {};
         const extra = Object.keys(imported).filter((key) => !IMPORT_KEYS.has(key));
-        if (extra.length > 0) note(`实例 ${String(item.id)} 的导入扩展里有元素数据：${extra.join('、')}`);
+        if (extra.length > 0) note(`instance ${String(item.id)} has element data in its import extension: ${extra.join(', ')}`);
         const policy = item.followPolicy as { kind?: string; start?: { speechRef?: { id: string } }; end?: { speechRef?: { id: string } } };
         for (const anchor of [policy?.start, policy?.end]) {
-          if (anchor?.speechRef && !snapshot.documents[anchor.speechRef.id]) note(`实例 ${String(item.id)} 的词锚点指向不存在的文档`);
+          if (anchor?.speechRef && !snapshot.documents[anchor.speechRef.id]) note(`instance ${String(item.id)} word anchor points to a missing document`);
         }
         const refs = [item.assetRef, item.prerender, (item.source as { assetRef?: unknown } | undefined)?.assetRef] as (
           { id: string } | undefined
         )[];
-        for (const ref of refs) if (ref && !snapshot.assets[ref.id]) note(`实例 ${String(item.id)} 引用的素材 ${ref.id} 不存在`);
+        for (const ref of refs) if (ref && !snapshot.assets[ref.id]) note(`instance ${String(item.id)} references missing asset ${ref.id}`);
         for (const id of [item.documentId, item.styleDocumentId] as (string | undefined)[]) {
-          if (id && !snapshot.documents[id]) note(`实例 ${String(item.id)} 引用的文档 ${id} 不存在`);
+          if (id && !snapshot.documents[id]) note(`instance ${String(item.id)} references missing document ${id}`);
         }
       }
       const blobBytes = bytesUnder(path.join(dir, 'blobs'));
       totals.blobBytes += blobBytes;
-      if (blobBytes > 0) note(`blobs/ 里有 ${blobBytes} 字节`);
+      if (blobBytes > 0) note(`blobs/ has ${blobBytes} bytes`);
     } finally {
       await host.request('videos.close', { videoId });
     }

@@ -121,13 +121,13 @@ export class ManualClock implements Clock {
 /** No video is opened: the node's tasks should not touch video, and if they do, they throw. */
 export const noVideos: JobVideos = {
   retain() {
-    throw new Error('节点任务不应该租用视频');
+    throw new Error('node tasks should not lease a video');
   },
   release() {
-    throw new Error('节点任务不应该租用视频');
+    throw new Error('node tasks should not lease a video');
   },
   async source() {
-    throw new RpcError('not-found', '视频没有打开');
+    throw new RpcError('not-found', 'video is not open');
   },
   current() {
     return null;
@@ -136,7 +136,7 @@ export const noVideos: JobVideos = {
     return null;
   },
   async apply() {
-    throw new Error('节点任务不应该修改视频');
+    throw new Error('node tasks should not modify the video');
   },
 };
 
@@ -244,13 +244,13 @@ export async function startTestNode(options: TestNodeOptions = {}): Promise<Test
     },
     async pair(clientId = 'client-a', clientName = 'Test Client') {
       const code = pairingCodeOf(service.status()) ?? pairingCodeOf(service.pairingCode());
-      if (!code) throw new Error('没有可用的配对码');
+      if (!code) throw new Error('no pairing code available');
       const response = await fetch(`${baseUrl()}/v1/pair`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', [NODE_PROTOCOL_HEADER]: String(NODE_PROTOCOL_VERSION) },
         body: JSON.stringify({ code, clientId, clientName }),
       });
-      if (!response.ok) throw new Error(`配对失败：${response.status} ${await response.text()}`);
+      if (!response.ok) throw new Error(`pairing failed: ${response.status} ${await response.text()}`);
       return ((await response.json()) as { token: string }).token;
     },
     async close({ keepDir = false } = {}) {
@@ -309,14 +309,14 @@ export async function submitTestJob(
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(request),
   });
-  if (!created.ok) throw new Error(`创建失败：${created.status} ${await created.text()}`);
+  if (!created.ok) throw new Error(`create failed: ${created.status} ${await created.text()}`);
   const job = (await created.json()) as NodeJob;
   const uploaded = await nodeFetch(baseUrl, token, `/v1/jobs/${job.jobId}/input`, {
     method: 'PUT',
     headers: { 'content-type': 'application/octet-stream' },
     body: new Uint8Array(media),
   });
-  if (!uploaded.ok) throw new Error(`上传失败：${uploaded.status} ${await uploaded.text()}`);
+  if (!uploaded.ok) throw new Error(`upload failed: ${uploaded.status} ${await uploaded.text()}`);
   await uploaded.arrayBuffer();
   return { job, request };
 }

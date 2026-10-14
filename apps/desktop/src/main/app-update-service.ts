@@ -387,7 +387,7 @@ export function createAppUpdateService(deps: AppUpdateDeps): AppUpdateService {
       report = await runCheck(origin, prior);
     } catch (error) {
       // i18n-ignore: diagnostic log, printed only to the main process's terminal, not shown in the UI
-      deps.log(`检查更新失败（${origin}）：${errorText(error)}`);
+      deps.log(`update check failed (${origin}): ${errorText(error)}`);
     }
     checkInFlight = false;
     lastCheckAt = nowS();
@@ -453,7 +453,7 @@ export function createAppUpdateService(deps: AppUpdateDeps): AppUpdateService {
         active = null;
         if (!result.cancelled) {
           // i18n-ignore: diagnostic log, printed only to the main process's terminal, not shown in the UI
-          deps.log(`下载更新失败（${result.failure}）：${result.detail}`);
+          deps.log(`update download failed (${result.failure}): ${result.detail}`);
           dispatch({ type: 'fail', failure: result.failure });
         }
         return;
@@ -484,7 +484,7 @@ export function createAppUpdateService(deps: AppUpdateDeps): AppUpdateService {
     active = null;
     if (outcome.type === 'failed') {
       // i18n-ignore: diagnostic log, printed only to the main process's terminal, not shown in the UI
-      deps.log(`校验更新失败（${outcome.failure}）：${outcome.detail}`);
+      deps.log(`update verification failed (${outcome.failure}): ${outcome.detail}`);
       await fs.rm(archive, { force: true }).catch(() => undefined);
       dispatch({ type: 'fail', failure: outcome.failure });
       return;
@@ -524,7 +524,7 @@ export function createAppUpdateService(deps: AppUpdateDeps): AppUpdateService {
     if (disposed || current().k !== 'installing') return;
     if (outcome.type === 'launched') {
       // i18n-ignore: diagnostic log, printed only to the main process's terminal, not shown in the UI
-      deps.log('换包程序已起，应用退出');
+      deps.log('update installer started, app quitting');
       deps.quit();
     } else if (outcome.type === 'fallback') {
       deps.reveal(archive);
@@ -532,7 +532,7 @@ export function createAppUpdateService(deps: AppUpdateDeps): AppUpdateService {
       dispatch({ type: 'fail', failure: 'manual' });
     } else {
       // i18n-ignore: diagnostic log, printed only to the main process's terminal, not shown in the UI
-      deps.log(`安装更新失败（${outcome.failure}）：${outcome.detail}`);
+      deps.log(`update install failed (${outcome.failure}): ${outcome.detail}`);
       dispatch({ type: 'fail', failure: outcome.failure });
     }
   }
@@ -549,24 +549,24 @@ export function createAppUpdateService(deps: AppUpdateDeps): AppUpdateService {
       // For one that is not staged (the Windows installer), only check that the file still exists and its size matches. The digest is not recomputed during quit.
       if (!ready.staged && !(await sizeMatches(archive, info.size))) {
         // i18n-ignore: diagnostic log, printed only to the main process's terminal, not shown in the UI
-        deps.log(`退出时没有安装更新：${archive} 不在了或大小不对`);
+        deps.log(`quitting without installing the update: ${archive} is gone or has the wrong size`);
         return;
       }
       const outcome = await deps.installPackage(info, archive, { staged: ready.staged, relaunch: false });
       if (outcome.type === 'launched') {
         dispatch({ type: 'install' });
         // i18n-ignore: diagnostic log, printed only to the main process's terminal, not shown in the UI
-        deps.log(`退出时安装 ${info.version}（build ${info.build}），装完不重新打开`);
+        deps.log(`installing ${info.version} (build ${info.build}) on quit, not reopening after install`);
       } else {
         // i18n-ignore: diagnostic log, printed only to the main process's terminal, not shown in the UI
-        deps.log(`退出时没有安装更新：${outcome.type === 'failed' ? `${outcome.failure} ${outcome.detail}` : '这台机器不能自己换包'}`);
+        deps.log(`quitting without installing the update: ${outcome.type === 'failed' ? `${outcome.failure} ${outcome.detail}` : 'this machine cannot install updates itself'}`);
       }
     // i18n-ignore: diagnostic log, printed only to the main process's terminal, not shown in the UI
-    })().catch((error: unknown) => deps.log(`退出时安装更新出错：${errorText(error)}`));
+    })().catch((error: unknown) => deps.log(`error installing update on quit: ${errorText(error)}`));
     await new Promise<void>((resolve) => {
       const stop = deps.schedule(() => {
         // i18n-ignore: diagnostic log, printed only to the main process's terminal, not shown in the UI
-        deps.log(`退出时安装更新超过 ${QUIT_INSTALL_DEADLINE_MS} ms，照常退出`);
+        deps.log(`installing the update on quit took longer than ${QUIT_INSTALL_DEADLINE_MS} ms, quitting anyway`);
         resolve();
       }, QUIT_INSTALL_DEADLINE_MS);
       void attempt.then(() => {

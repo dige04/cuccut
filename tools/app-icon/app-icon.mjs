@@ -37,11 +37,11 @@ export const GEOMETRY = {
 // Colour variants. tile is the base tile (solid or [top, bottom] gradient); left / right are the segment colours on each side of each track's cut (left is the played one, light; right is the not-yet-played one, solid); mark is the playhead and star.
 export const VARIANTS = {
   // Final: coral tile, left played segments light coral, right segments white; AI elements (playhead + star) white.
-  coral: { id: 'coral', name: '珊瑚底砖', tile: CORAL, left: CORAL_TINT, right: WHITE, mark: WHITE },
+  coral: { id: 'coral', name: 'Coral tile', tile: CORAL, left: CORAL_TINT, right: WHITE, mark: WHITE },
   // Alternative: deep grey tile, left played segments white, right coral; AI elements white.
-  ink: { id: 'ink', name: '深色底砖', tile: INK, left: WHITE, right: CORAL, mark: WHITE },
+  ink: { id: 'ink', name: 'Dark tile', tile: INK, left: WHITE, right: CORAL, mark: WHITE },
   // Alternative: single-hue gradient tile (Spectrum 2 brand gradient), otherwise same as the recommended one.
-  gradient: { id: 'gradient', name: '渐变底砖', tile: [CORAL, CORAL_DEEP], left: CORAL_TINT, right: WHITE, mark: WHITE },
+  gradient: { id: 'gradient', name: 'Gradient tile', tile: [CORAL, CORAL_DEEP], left: CORAL_TINT, right: WHITE, mark: WHITE },
 };
 
 export function squircleD(x, y, w, h, R, s) {

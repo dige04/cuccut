@@ -127,7 +127,7 @@ lines.on('line', (line) => {
   try {
     request = JSON.parse(line) as Request;
   } catch {
-    process.stderr.write('fake-model-worker: 无法解析的请求行\n');
+    process.stderr.write('fake-model-worker: cannot parse the request line\n');
     process.exit(2);
   }
   void handle(request);
@@ -142,7 +142,7 @@ async function handle(request: Request): Promise<void> {
   const { id, method, params } = request;
   switch (method) {
     case 'worker.hello':
-      if (params.contractVersion !== 1) return fail(id, 'CONTRACT_MISMATCH', '合同版本不符');
+      if (params.contractVersion !== 1) return fail(id, 'CONTRACT_MISMATCH', 'contract version mismatch');
       if (control().helloDelayMs) await sleep(control().helloDelayMs!);
       return respond(id, {
         workerVersion: WORKER_VERSION,
@@ -164,14 +164,14 @@ async function handle(request: Request): Promise<void> {
         imageFamilies: (control().capabilities ?? []).includes('image') ? (control().imageFamilies ?? IMAGE_FAMILIES) : [],
       });
     case 'model.load': {
-      if (state !== 'empty') return fail(id, 'ALREADY_LOADED', '已经加载了一个模型包');
+      if (state !== 'empty') return fail(id, 'ALREADY_LOADED', 'a model bundle is already loaded');
       const next = params.bundle as Bundle | undefined;
-      if (!next || typeof next.bundleId !== 'string') return fail(id, 'INVALID_PARAMS', '缺少 bundle');
+      if (!next || typeof next.bundleId !== 'string') return fail(id, 'INVALID_PARAMS', 'missing bundle');
       bundle = next;
       const loadFailure = faultArg('load-fail');
       if (loadFailure) {
         bundle = null;
-        return fail(id, loadFailure, '模拟的加载失败', false, { file: 'model.safetensors' });
+        return fail(id, loadFailure, 'simulated load failure', false, { file: 'model.safetensors' });
       }
       state = 'loading';
       emit('model.phase', { phase: 'loading-weights' });
@@ -192,7 +192,7 @@ async function handle(request: Request): Promise<void> {
         memory: null,
       });
     case 'job.run': {
-      if (state !== 'ready') return fail(id, 'WORKER_BUSY', `Worker 状态是 ${state}`);
+      if (state !== 'ready') return fail(id, 'WORKER_BUSY', `Worker state is ${state}`);
       const record = control().record;
       if (record) fs.appendFileSync(record, `${JSON.stringify(params)}\n`);
       if (params.capability === 'separate') return separate(id, params);
@@ -201,11 +201,11 @@ async function handle(request: Request): Promise<void> {
       return params.capability === 'synthesize' ? synthesize(id, params) : run(id, params);
     }
     case 'job.cancel':
-      if (!job || job.jobId !== params.jobId) return fail(id, 'NOT_FOUND', '没有这个任务');
+      if (!job || job.jobId !== params.jobId) return fail(id, 'NOT_FOUND', 'no such job');
       job.cancelled = true;
       return respond(id, { acknowledged: true });
     default:
-      return fail(id, 'UNKNOWN_METHOD', `未知方法 ${method}`);
+      return fail(id, 'UNKNOWN_METHOD', `unknown method ${method}`);
   }
 }
 
@@ -241,7 +241,7 @@ async function run(id: number, params: Record<string, unknown>): Promise<void> {
   if (runError) {
     job = null;
     state = 'ready';
-    fail(id, runError, '模拟的推理失败', true);
+    fail(id, runError, 'simulated inference failure', true);
     if (runError === 'WORKER_PANIC') process.exit(101);
     return;
   }
@@ -319,7 +319,7 @@ async function run(id: number, params: Record<string, unknown>): Promise<void> {
     emit('job.segment', { jobId, segment });
     emit('job.progress', { jobId, phase: 'transcribing', done: index + 1, total: groups.length, unit: 'segments' });
     if (fault('crash-on-run') || (fault('crash-once') && runGeneration === 1)) {
-      process.stderr.write('fake-model-worker: 模拟崩溃（推理途中退出）\n');
+      process.stderr.write('fake-model-worker: simulated crash (exited during inference)\n');
       process.exit(70);
     }
   }
@@ -396,7 +396,7 @@ async function synthesize(id: number, params: Record<string, unknown>): Promise<
   if (runError) {
     job = null;
     state = 'ready';
-    return fail(id, runError, '模拟的合成失败', runError === 'INFERENCE_FAILED');
+    return fail(id, runError, 'simulated synthesis failure', runError === 'INFERENCE_FAILED');
   }
   const phase = (name: string) => {
     current.phase = name;
@@ -407,7 +407,7 @@ async function synthesize(id: number, params: Record<string, unknown>): Promise<
     if (!fs.existsSync(input.file)) {
       job = null;
       state = 'ready';
-      return fail(id, 'INPUT_UNREADABLE', '参考录音读不出来');
+      return fail(id, 'INPUT_UNREADABLE', 'reference recording cannot be read');
     }
   }
   phase('synthesizing');
@@ -518,7 +518,7 @@ async function separate(id: number, params: Record<string, unknown>): Promise<vo
   const runError = faultArg('run-error');
   if (runError) {
     done();
-    return fail(id, runError, '模拟的分离失败', runError === 'INFERENCE_FAILED');
+    return fail(id, runError, 'simulated separation failure', runError === 'INFERENCE_FAILED');
   }
   const phase = (name: string) => {
     current.phase = name;
@@ -527,7 +527,7 @@ async function separate(id: number, params: Record<string, unknown>): Promise<vo
   phase('decoding');
   if (!fs.existsSync(input.file)) {
     done();
-    return fail(id, 'INPUT_UNREADABLE', '素材读不出来', false, { reason: 'unreadable' });
+    return fail(id, 'INPUT_UNREADABLE', 'source media cannot be read', false, { reason: 'unreadable' });
   }
   phase('separating');
   const steps = 4;
@@ -584,7 +584,7 @@ async function diarize(id: number, params: Record<string, unknown>): Promise<voi
   phase('decoding');
   if (!fs.existsSync(input.file)) {
     done();
-    return fail(id, 'INPUT_UNREADABLE', '素材读不出来', false, { reason: 'unreadable' });
+    return fail(id, 'INPUT_UNREADABLE', 'source media cannot be read', false, { reason: 'unreadable' });
   }
   phase('diarizing');
   for (let step = 1; step <= 2; step++) {
@@ -637,7 +637,7 @@ async function image(id: number, params: Record<string, unknown>): Promise<void>
   if (runError) {
     job = null;
     state = 'ready';
-    return fail(id, runError, '模拟的生图失败', runError === 'INFERENCE_FAILED');
+    return fail(id, runError, 'simulated image generation failure', runError === 'INFERENCE_FAILED');
   }
   const phase = (name: string) => {
     current.phase = name;

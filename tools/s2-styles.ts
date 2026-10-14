@@ -37,7 +37,7 @@ function dedupeS2StylesInBuild(): Plugin {
           const css = typeof output.source === 'string' ? output.source : new TextDecoder().decode(output.source);
           const parsed = parseLayeredCss(css);
           if (parsed) output.source = mergeLayeredCss([parsed], '');
-          else this.warn(`${output.fileName} 里有拆不准的写法（匿名层、@import 或条件规则里的 @layer），没有去重`);
+          else this.warn(`${output.fileName} has a layout that cannot be split reliably (anonymous layer, @import, or @layer inside a conditional rule); not deduplicated`);
         }
       },
     },
@@ -107,7 +107,7 @@ function dedupeS2StylesInDev(macroPlugin: Plugin): Plugin {
       let css: string;
       if (MACRO_CSS.test(source)) {
         const content = macroCss(this, source);
-        if (content === undefined) return this.error(`style 宏没有生成 ${source}`);
+        if (content === undefined) return this.error(`style macro did not generate ${source}`);
         css = content;
       } else {
         css = readFileSync(source, 'utf8');

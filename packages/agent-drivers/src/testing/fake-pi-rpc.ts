@@ -8,7 +8,7 @@ import type { FakePiLogEntry, FakePiScenario, FakePiTool } from './fake-pi.ts';
 
 const dir = process.env.FAKE_PI_DIR;
 if (!dir) {
-  process.stderr.write('FAKE_PI_DIR 没有设置\n');
+  process.stderr.write('FAKE_PI_DIR is not set\n');
   process.exit(2);
 }
 const scenario = JSON.parse(fs.readFileSync(path.join(dir, 'scenario.json'), 'utf8')) as FakePiScenario;

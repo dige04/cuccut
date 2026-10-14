@@ -26,7 +26,7 @@ export function ensureCargo(required = true) {
     console.error('Cargo not found. Install Rust: https://rustup.rs. See README.md#run-from-source or run npm run dev:lite.');
     process.exit(1);
   }
-  console.log(`PATH 里没有 cargo，改用 ${cargo}`);
+  console.log(`cargo not on PATH, using ${cargo}`);
   process.env.PATH = [dirname(cargo), ...dirs].join(delimiter);
   return true;
 }

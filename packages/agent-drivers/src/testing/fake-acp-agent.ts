@@ -12,7 +12,7 @@ import type { FakeAcpLogEntry, FakeAcpScenario } from './fake-acp.ts';
 
 const dir = process.env.FAKE_ACP_DIR;
 if (!dir) {
-  process.stderr.write('FAKE_ACP_DIR 没有设置\n');
+  process.stderr.write('FAKE_ACP_DIR is not set\n');
   process.exit(2);
 }
 const scenario = JSON.parse(fs.readFileSync(path.join(dir, 'scenario.json'), 'utf8')) as FakeAcpScenario;

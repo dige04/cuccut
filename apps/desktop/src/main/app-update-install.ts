@@ -291,7 +291,7 @@ export function createPendingLaunch(spawn: (file: string, args: readonly string[
         return true;
       } catch (error) {
         // i18n-ignore: diagnostic log, printed only to the main process's terminal, not to the UI
-        log(`起安装器失败：${errorText(error)}`);
+        log(`Failed to start installer: ${errorText(error)}`);
         return false;
       }
     },

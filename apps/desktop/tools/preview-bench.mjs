@@ -42,16 +42,16 @@ function parseOptions(argv) {
     } else if (arg === '--dpr') options.dpr = Number(argv[++i]);
     else if (arg === '--json') options.json = resolve(argv[++i]);
     else if (arg === '--screenshots') options.screenshots = resolve(argv[++i]);
-    else throw new Error(`不认识的参数 ${arg}`);
+    else throw new Error(`unknown argument ${arg}`);
   }
   return options;
 }
 
 /** Synthetic media: a test pattern plus a sine tone, 12 seconds. */
 const SYNTHETIC = [
-  { name: '合成 1080p30 + 双语字幕', width: 1920, height: 1080, fps: 30 },
-  { name: '合成 1080p60 + 双语字幕', width: 1920, height: 1080, fps: 60 },
-  { name: '合成 9比16 + 双语字幕', width: 1080, height: 1920, fps: 30 },
+  { name: 'Synthetic 1080p30 + bilingual subtitles', width: 1920, height: 1080, fps: 30 },
+  { name: 'Synthetic 1080p60 + bilingual subtitles', width: 1920, height: 1080, fps: 60 },
+  { name: 'Synthetic 9:16 + bilingual subtitles', width: 1080, height: 1920, fps: 30 },
 ];
 
 /** Node side: the temp directories, the media, and the isolated Runtime; starts Electron, kills it on timeout, and after finishing stops the Runtime and deletes the temp directories. */
@@ -59,13 +59,13 @@ async function launch() {
   const options = parseOptions(process.argv.slice(2));
   for (const file of ['renderer/index.html', 'preload/index.js']) {
     if (!existsSync(join(OUT, file))) {
-      console.error(`没有 ${join(OUT, file)}：先运行 npm run build`);
+      console.error(`missing ${join(OUT, file)}: run npm run build first`);
       process.exit(2);
     }
   }
   const engineHost = process.env.CUCCUT_ENGINE_HOST || join(process.env.CARGO_TARGET_DIR || join(ROOT, 'target'), 'debug/engine-host');
   if (!existsSync(engineHost)) {
-    console.error(`没有 ${engineHost}：先 cargo build -p engine-host`);
+    console.error(`missing ${engineHost}: run cargo build -p engine-host first`);
     process.exit(2);
   }
   const { spawn, spawnSync } = await import('node:child_process');
@@ -96,7 +96,7 @@ async function launch() {
         ...['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=12'],
         ...['-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-g', String(scene.fps), '-c:a', 'aac', '-shortest', file],
       ]);
-      if (made.status !== 0) throw new Error(`ffmpeg 生成合成素材失败：${made.stderr}`);
+      if (made.status !== 0) throw new Error(`ffmpeg failed to generate synthetic media: ${made.stderr}`);
       synthetic.push({ ...scene, file });
     }
   }
@@ -139,7 +139,7 @@ async function launch() {
     rmSync(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   };
   if (!ready) {
-    console.error('隔离的 Runtime 没有起来');
+    console.error('The isolated Runtime did not start');
     cleanup();
     process.exit(2);
   }
@@ -161,12 +161,12 @@ async function launch() {
   });
   const limit = SCENE_TIMEOUT_MS * scenes.length + 30_000;
   const timer = setTimeout(() => {
-    console.error(`Electron ${limit / 1000} 秒没有结束，杀掉`);
+    console.error(`Electron did not exit within ${limit / 1000} seconds, killing it`);
     child.kill('SIGKILL');
   }, limit);
   const code = await new Promise((done) => {
     child.on('error', (error) => {
-      console.error('Electron 起不来', error);
+      console.error('Electron failed to start', error);
       done(2);
     });
     child.on('exit', (exitCode, signal) => done(exitCode ?? (signal ? 2 : 1)));
@@ -182,7 +182,7 @@ async function launch() {
 async function bench() {
   const { app, BrowserWindow, ipcMain, session } = await import('electron');
   const temp = process.argv.find((arg) => arg.startsWith('--cuccut-temp='))?.slice('--cuccut-temp='.length);
-  if (!temp) throw new Error('缺少 --cuccut-temp：用 node 运行这个脚本');
+  if (!temp) throw new Error('missing --cuccut-temp: run this script with node');
   const job = JSON.parse(readFileSync(join(temp, 'job.json'), 'utf8'));
   for (const name of ['userData', 'sessionData', 'logs', 'crashDumps']) app.setPath(name, join(temp, 'electron', name));
   app.dock?.hide();
@@ -196,7 +196,7 @@ async function bench() {
     app.exit(code);
   };
   setTimeout(
-    () => finish(2, `基准 ${(SCENE_TIMEOUT_MS * job.scenes.length) / 1000} 秒没有结束`),
+    () => finish(2, `benchmark did not finish within ${(SCENE_TIMEOUT_MS * job.scenes.length) / 1000} seconds`),
     SCENE_TIMEOUT_MS * job.scenes.length,
   ).unref();
   app.on('window-all-closed', () => {});
@@ -230,16 +230,16 @@ async function bench() {
     },
   });
   win.webContents.on('console-message', ({ level, message }) => notes.push(`[renderer:${level}] ${message}`));
-  win.webContents.on('render-process-gone', (_event, details) => finish(1, `渲染进程退出：${details.reason}`));
+  win.webContents.on('render-process-gone', (_event, details) => finish(1, `renderer process exited: ${details.reason}`));
 
   const { readdirSync } = await import('node:fs');
   const assets = join(OUT, 'renderer/assets');
   const entry = readdirSync(assets).find((name) => /^preview-bench-.*\.js$/.test(name));
-  if (!entry) return finish(1, `${assets} 里没有基准入口 preview-bench-*.js：渲染进程的构建没有带上它`);
+  if (!entry) return finish(1, `no benchmark entry preview-bench-*.js in ${assets}: the renderer build did not include it`);
 
   await win.loadFile(join(OUT, 'renderer/index.html'));
   await win.webContents.executeJavaScript(`import(${JSON.stringify(pathToFileURL(join(assets, entry)).href)}).then(() => true)`, true);
-  console.log(`负载 ${job.load}，窗口 ${job.window.width}×${job.window.height}，像素比 ${job.dpr}，每段放 ${job.seconds} 秒`);
+  console.log(`load ${job.load}, window ${job.window.width}×${job.window.height}, pixel ratio ${job.dpr}, ${job.seconds} seconds per scene`);
   let failed = 0;
   for (const scene of job.scenes) {
     const input = { projectId: job.projectId, path: scene.path, at: job.at ?? 0, seconds: job.seconds, openTimeoutMs: OPEN_TIMEOUT_MS };
@@ -255,24 +255,24 @@ async function bench() {
     } catch (error) {
       failed++;
       results.push({ scene: scene.name, error: error instanceof Error ? error.message : String(error) });
-      console.error(`${scene.name}：${error instanceof Error ? error.message : String(error)}`);
+      console.error(`${scene.name}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  if (blocked.length > 0) console.log(`拦下的网络请求 ${blocked.length} 个：${[...new Set(blocked)].slice(0, 5).join('、')}`);
+  if (blocked.length > 0) console.log(`blocked network requests ${blocked.length}: ${[...new Set(blocked)].slice(0, 5).join(', ')}`);
   finish(failed > 0 ? 1 : 0, null);
 }
 
 function print(name, r) {
   const q = (value) => `${value.p50}/${value.p95}/${value.max}`;
   console.log(
-    `${name}：${r.canvas.width}×${r.canvas.height} 画成 ${r.size ? `${r.size.width}×${r.size.height}` : '—'}（${r.visibility}）` +
-      ` · 画上去 ${r.presentedFps} fps（视频 ${r.sourceFps} fps，掉 ${r.droppedFrames}/${r.spannedFrames} 帧，留旧帧 ${r.stats.held} 次）` +
-      ` · 首帧 ${r.firstFrameMs ?? '—'} ms · 打开 ${r.openMs} ms（精确帧 ${r.openExactMs ?? '—'} ms）`,
+    `${name}: ${r.canvas.width}×${r.canvas.height} drawn as ${r.size ? `${r.size.width}×${r.size.height}` : '—'} (${r.visibility})` +
+      ` · presented ${r.presentedFps} fps (video ${r.sourceFps} fps, dropped ${r.droppedFrames}/${r.spannedFrames} frames, held stale frame ${r.stats.held} times)` +
+      ` · first frame ${r.firstFrameMs ?? '—'} ms · open ${r.openMs} ms (exact frame ${r.openExactMs ?? '—'} ms)`,
   );
   console.log(
-    `  tick ms p50/p95/max ${q(r.tickMs)} · 送画面 ${q(r.uploadMs)} · 画 ${q(r.renderMs)} · rAF 间隔 ${q(r.rafIntervalMs)}` +
-      ` · 长任务 ${r.longTasks.count} 个（第一秒 ${r.longTasks.firstSecond}，最长 ${r.longTasks.maxMs} ms）` +
-      ` · 偏差 ms ${q(r.driftMs)} · 重新定位 ${r.stats.resyncs} · waiting ${r.waiting} · 拖动 ms ${q(r.scrubMs)}` +
-      `（停下到精确帧 ${r.scrubSettleMs ?? '—'}）· 跳转 ms 首帧/精确帧 ${r.jumpMs.first ?? '—'}/${r.jumpMs.exact ?? '—'}`,
+    `  tick ms p50/p95/max ${q(r.tickMs)} · upload ${q(r.uploadMs)} · render ${q(r.renderMs)} · rAF interval ${q(r.rafIntervalMs)}` +
+      ` · long tasks ${r.longTasks.count} (first second ${r.longTasks.firstSecond}, longest ${r.longTasks.maxMs} ms)` +
+      ` · drift ms ${q(r.driftMs)} · resyncs ${r.stats.resyncs} · waiting ${r.waiting} · scrub ms ${q(r.scrubMs)}` +
+      ` (settled on exact frame ${r.scrubSettleMs ?? '—'}) · jump ms first frame/exact frame ${r.jumpMs.first ?? '—'}/${r.jumpMs.exact ?? '—'}`,
   );
 }

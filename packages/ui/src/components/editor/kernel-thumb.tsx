@@ -24,7 +24,7 @@ export function useThumbPlanner(): RenderPlanner | null {
         loaded = value;
         if (live) setPlanner(value);
       },
-      (error: unknown) => console.warn('缩略图的渲染内核载入失败', error), // i18n-ignore: dev log
+      (error: unknown) => console.warn('thumbnail render kernel failed to load', error), // i18n-ignore: dev log
     );
     return () => {
       live = false;
@@ -69,7 +69,7 @@ export function KernelThumb({ draw, live = false, backdrop }: { draw: ThumbDraw;
         try {
           picture = draw(planner, width, height, ratio);
         } catch (error) {
-          console.warn('缩略图画不出来', error); // i18n-ignore: dev log
+          console.warn('thumbnail could not be drawn', error); // i18n-ignore: dev log
         }
       }
       // Don't reset the size when it hasn't changed (resetting reallocates the bitmap): during hover playback it redraws every frame.

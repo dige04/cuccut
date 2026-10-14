@@ -597,7 +597,7 @@ describe('withEditorContext', () => {
   it('writes one line in the context block when the UI language is given', () => {
     const text = withEditorContext('剪一下', { ...base, uiLanguage: 'zh-Hans' });
     expect(text).toContain('<cuccut-editor-context>');
-    expect(text).toContain('\n用户的界面语言是 zh-Hans。\n');
+    expect(text).toContain('\nThe user’s interface language is zh-Hans.\n');
   });
 
   it('does not write this line when an older client gives no UI language', () => {

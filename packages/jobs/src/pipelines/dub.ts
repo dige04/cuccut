@@ -204,15 +204,15 @@ const PARAMS_SCHEMA = {
   type: 'object',
   properties: {
     // i18n-ignore-start: parameter descriptions (JSON Schema for the agent)
-    videoId: { type: 'string', description: '已打开的视频（等同 target: { videoId }）' },
-    target: targetSchema('要配音的视频：已打开的，或 Space 里的视频条目（流程期间由 Runtime 打开）；与 videoId 给一个', null),
-    documentId: { type: 'string', description: '源 speech 文档；视频里只有一份或给了 translationId 时可以不给' },
-    targetLanguage: { type: 'string', description: '目标语言（BCP 47）；给了 translationId 时可以不给' },
-    translationId: { type: 'string', description: '已有的译文文档；不给时先翻译' },
-    voice: { type: 'string', description: '音色：模型的音色 ID，或用户库里的 library:<id>' },
-    provider: { type: 'string', description: '语音合成的 Provider；不给时用默认值' },
+    videoId: { type: 'string', description: 'Open video (same as target: { videoId })' },
+    target: targetSchema('Video to dub: an open video, or a video entry in Space (opened by the Runtime during the run); give this or videoId, not both', null),
+    documentId: { type: 'string', description: 'Source speech document; may be omitted when the video has only one or translationId is given' },
+    targetLanguage: { type: 'string', description: 'Target language (BCP 47); may be omitted when translationId is given' },
+    translationId: { type: 'string', description: 'Existing translation document; translated first when omitted' },
+    voice: { type: 'string', description: 'Voice: the voice ID of the model, or library:<id> from the user library' },
+    provider: { type: 'string', description: 'Speech synthesis provider; the default when omitted' },
     model: { type: 'string' },
-    textProvider: { type: 'string', description: '缺译文时翻译用的文本模型 Provider' },
+    textProvider: { type: 'string', description: 'Provider of the text model used to translate when the translation is missing' },
     textModel: { type: 'string' },
     style: { type: 'string', maxLength: 500 },
     glossary: {
@@ -232,7 +232,7 @@ const PARAMS_SCHEMA = {
     separateBackground: { type: 'boolean', default: false },
     regroup: {
       type: 'object',
-      description: '句级重配：只重新合成已有一组配音里的这几句，写回那一组；译文、语言与音色取自那一组的配音计划',
+      description: 'Sentence-level redub: resynthesize only these sentences of an existing dub set and write them back to that set; the translation, language and voice come from the dub plan of that set',
       properties: {
         groupId: { type: 'string' },
         units: { type: 'array', minItems: 1, maxItems: MAX_REGROUP_UNITS, items: { type: 'string' } },

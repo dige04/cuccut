@@ -213,7 +213,7 @@ describe('PiSession (fake pi)', () => {
     await completed(turnId);
     const second = fake.commands('prompt')[1]!;
     expect(second.images).toBeUndefined();
-    expect(second.message).toBe(`look\n\n[图片：${image}]`);
+    expect(second.message).toBe(`look\n\n[Image: ${image}]`);
   });
 
   it('steer: sends steer while a turn is in progress; reports unavailable when an older version replies Unknown command; interrupt: clears the queue, aborts, the turn is recorded as interrupted', async () => {

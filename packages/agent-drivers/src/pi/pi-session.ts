@@ -181,7 +181,7 @@ export class PiSession implements AgentSession {
     );
     const source = [
       // i18n-ignore: comment written into the source code of the Pi extension; it is handed to Pi to load and is not shown to people
-      '// CucCut 为这个 Pi 会话生成的扩展：注册 CucCut 的 MCP 服务。会话结束时删除。',
+      '// Extension CucCut generates for this Pi session: registers the CucCut MCP server. Deleted when the session ends.',
       `const servers = ${JSON.stringify(config)};`,
       'export default function cuccut(pi) {',
       '  for (const [name, config] of Object.entries(servers)) pi.registerMcpServer(name, config);',
@@ -338,7 +338,7 @@ export class PiSession implements AgentSession {
     if (!images.length) return { message: input.text };
     if (!piModelTakesImages(this.#state.model)) {
       // i18n-ignore: image path hint appended after the prompt, handed to the model
-      const hints = images.map((image) => `[图片：${image.path}]`).join('\n');
+      const hints = images.map((image) => `[Image: ${image.path}]`).join('\n');
       return { message: `${input.text}\n\n${hints}` };
     }
     const encoded = await Promise.all(

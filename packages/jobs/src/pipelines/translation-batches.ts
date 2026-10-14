@@ -42,7 +42,7 @@ export const GLOSSARIES_SCHEMA = {
   type: 'array',
   maxItems: MAX_LIBRARY_GLOSSARIES,
   // i18n-ignore: parameter descriptions (JSON Schema for the agent)
-  description: '用户库里翻译用术语表的 ID（可以指定版本）；与视频里启用的合在一起用',
+  description: 'ID of a translation glossary in the user’s Library (a version can be specified); used together with the glossaries enabled in the video',
   items: {
     type: 'object',
     properties: { id: { type: 'string' }, version: { type: 'integer', minimum: 1 } },

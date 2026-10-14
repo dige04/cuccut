@@ -2679,11 +2679,11 @@ export function withEditorContext(text: string, context: EditorContext | undefin
   if (!context) return text;
   // i18n-ignore-start: context sent to the agent (prompt for the model), does not change with the UI language
   const lines = [
-    `用户在 CucCut 编辑器里打开着视频「${context.videoName}」（video: ${JSON.stringify(context.videoPath)}，videoId: ${context.videoId}，用户看到的版本 ${context.revision}）。`,
-    `播放头在 ${context.playheadSeconds.toFixed(3)} 秒。`,
-    context.selection.length ? `时间线上选中的片段：${context.selection.join('、')}。` : '时间线上没有选中片段。',
-    ...(context.uiLanguage ? [`用户的界面语言是 ${context.uiLanguage}。`] : []),
-    '「这个」「选中的」「这里」指的就是上面这些。修改前先用 videos_inspect 读取当前版本：用户可能刚改过。',
+    `The user has the video “${context.videoName}” open in the CucCut editor (video: ${JSON.stringify(context.videoPath)}, videoId: ${context.videoId}, the revision the user sees: ${context.revision}).`,
+    `The playhead is at ${context.playheadSeconds.toFixed(3)} seconds.`,
+    context.selection.length ? `Clips selected on the timeline: ${context.selection.join(', ')}.` : 'No clips are selected on the timeline.',
+    ...(context.uiLanguage ? [`The user’s interface language is ${context.uiLanguage}.`] : []),
+    '“this”, “the selected” and “here” refer to the items above. Before changing anything, read the current revision with videos_inspect: the user may have just changed it.',
   ];
   // i18n-ignore-end
   return `${text}\n\n<cuccut-editor-context>\n${lines.join('\n')}\n</cuccut-editor-context>`;
@@ -2702,21 +2702,21 @@ export function withSpaceReferences(text: string, references: readonly SpaceEntr
   const lines = references.map((r) => {
     const facts = [
       `entryId: ${r.entryId}`,
-      `种类: ${r.kind}`,
-      r.relPath ? `路径: ${JSON.stringify(r.relPath)}` : null,
+      `Kind: ${r.kind}`,
+      r.relPath ? `Path: ${JSON.stringify(r.relPath)}` : null,
       r.videoId ? `videoId: ${r.videoId}` : null,
       r.artifactId ? `artifactId: ${r.artifactId}` : null,
-      r.status ? `状态: ${r.status}` : null,
-      r.origin?.capability ? `来自: ${r.origin.capability}${r.origin.jobId ? `（任务 ${r.origin.jobId}）` : ''}` : null,
-      r.origin?.videoRevision ? `导出时的视频版本: ${r.origin.videoRevision}` : null,
+      r.status ? `Status: ${r.status}` : null,
+      r.origin?.capability ? `From: ${r.origin.capability}${r.origin.jobId ? ` (job ${r.origin.jobId})` : ''}` : null,
+      r.origin?.videoRevision ? `Video revision at export: ${r.origin.videoRevision}` : null,
     ].filter((x): x is string => x !== null);
-    return `- 「${r.name}」（${facts.join('，')}）`;
+    return `- “${r.name}” (${facts.join(', ')})`;
   });
   return [
     text,
     '',
     '<cuccut-space-references>',
-    '用户从 Space 带来了这些条目，接着它们做。这里只有元数据：要看内容时用 space_list、videos_inspect 等工具按 id 去取。',
+    'The user brought these Space entries over to continue with. Only their metadata is here: to see the content, fetch it by id with tools such as space_list and videos_inspect.',
     ...lines,
     '</cuccut-space-references>',
   ].join('\n');

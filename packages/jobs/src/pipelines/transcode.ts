@@ -76,21 +76,21 @@ const PARAMS_SCHEMA = {
     // i18n-ignore-start: parameter descriptions (JSON Schema for the agent)
     inputs: {
       type: 'array',
-      items: fileInputSchema('输入文件的绝对路径', 'Space 里的视频文件、成片或音频条目'),
+      items: fileInputSchema('Absolute path of the input file', 'Video file, export or audio Space entry'),
       minItems: 1,
       maxItems: 100,
     },
     action: {
       type: 'string',
       enum: ['compress', 'merge', 'extract-audio'],
-      description: 'compress：逐个压缩；merge：按顺序合并成一个文件；extract-audio：逐个取出音轨',
+      description: 'compress: compress each file; merge: merge the files in order into one file; extract-audio: extract the audio track from each file',
     },
     codec: { type: 'string', enum: ['h264', 'hevc'], default: 'h264' },
-    maxHeight: { type: 'integer', minimum: 16, maximum: 8640, description: '画面高度的上限（像素）' },
-    crf: { type: 'integer', minimum: 0, maximum: 51, description: '恒定质量；与 videoBitrateKbps 二选一' },
+    maxHeight: { type: 'integer', minimum: 16, maximum: 8640, description: 'Maximum frame height (pixels)' },
+    crf: { type: 'integer', minimum: 0, maximum: 51, description: 'Constant quality; choose either this or videoBitrateKbps' },
     videoBitrateKbps: { type: 'integer', minimum: 100, maximum: 200000 },
     audioBitrateKbps: { type: 'integer', minimum: 32, maximum: 1024, default: 128 },
-    outDir: { type: 'string', description: '输出目录的绝对路径（不存在时创建）；不给时是保存位置（设置 downloads.directory，默认主机的下载文件夹）' },
+    outDir: { type: 'string', description: 'Absolute path of the output directory (created if missing); if omitted, the save location is the downloads.directory setting (default: the host’s Downloads folder)' },
     // i18n-ignore-end
   },
   required: ['inputs', 'action'],

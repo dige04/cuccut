@@ -152,8 +152,8 @@ export function targetSchema(
     description,
     oneOf: [
       // i18n-ignore-start: parameter descriptions (JSON Schema for the agent)
-      one('videoId', { type: 'string', description: '已打开的视频' }),
-      one('entryId', { type: 'string', description: 'Space 里的视频条目（不要求已打开）' }),
+      one('videoId', { type: 'string', description: 'Video that is open' }),
+      one('entryId', { type: 'string', description: 'Video Space entry (does not need to be open)' }),
       // i18n-ignore-end
       ...(create
         ? [

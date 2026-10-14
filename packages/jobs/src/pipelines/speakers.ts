@@ -84,8 +84,8 @@ const PARAMS_SCHEMA = {
   type: 'object',
   properties: {
     // i18n-ignore-start: parameter descriptions (JSON Schema for agents)
-    videoId: { type: 'string', description: '已打开的视频' },
-    documentId: { type: 'string', description: '要区分说话人的 speech 文档；视频里只有一份时可以不给' },
+    videoId: { type: 'string', description: 'Video that is open' },
+    documentId: { type: 'string', description: 'Speech document to separate speakers in; can be omitted when the video has only one' },
     // i18n-ignore-end
   },
   required: ['videoId'],

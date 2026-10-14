@@ -29,6 +29,12 @@ a workspace settings shell.
   interview, the pack page and import/export, the review dialog, the publication calendar and its dialogs, in English
   and Vietnamese. Then a code review per module (profile 3, review gate 11, packs 9, publishing 10 findings, all
   fixed). After the merges: `tsc` clean, full `vitest` 636 files passing.
+- 2026-10-14, local package built from b740a860 (on the SSD: `/Volumes/SSD700/cuccut-build`), installed from the DMG into
+  `cuccut-qc` with fresh user data. Landing, Settings (You, Rules, Packs, Review, Publishing, Privacy) and the editor with an
+  imported video render correctly. A real MP4 export through the packaged runtime and export worker completed: 8 s,
+  1280×720, 30 fps, H.264 + AAC, and the frame at 4.000 s is frame 120. Findings: ffmpeg is not bundled and CucCut does not
+  download it, so a fresh Mac cannot export until the user installs ffmpeg (installed with Homebrew in the VM); an outdated
+  Codex (0.117.0 < 0.158.0) is reported clearly in the chat panel (the VM's agents were upgraded).
 - Not covered yet: the editor-side M2 surfaces in pixels (no `engine-host` binary was built for the QC runs),
   native window chrome in pixels (macOS blocks screen capture over SSH without Screen Recording
   permission), agent sessions (no signed-in agent in the VM), exporting a real video in the packaged app.
